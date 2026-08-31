@@ -1,8 +1,8 @@
 # @arvist/react
 
-React SDK for the [Arvist](https://arvist.ai) API. Headless hooks and Tailwind
-components for quality inspection — live station feeds, exception handling, and
-count reconciliation.
+React SDK for the [Arvist](https://arvist.ai) API. Headless hooks and
+dependency-free components for quality inspection — live station feeds,
+exception handling, and count reconciliation.
 
 Source-available under the [Business Source License 1.1](./LICENSE): free to
 use in production to build applications that interface with Arvist Services,
@@ -19,8 +19,9 @@ a fortnight of discovering it.
 npm install @arvist/react
 ```
 
-`react` 18 or 19 is a peer dependency. `socket.io-client` is an optional peer
-dependency, needed only for the realtime feed.
+`react` 18 or 19 is the only required peer dependency. `socket.io-client` is
+optional, needed only for the realtime feed. There are no runtime dependencies
+and no styling framework to adopt.
 
 ## Three layers
 
@@ -30,7 +31,7 @@ Use whichever you need — they are separate entry points.
 |---|---|---|
 | `@arvist/react/core` | API client, realtime feed, exception and reconciliation logic | No |
 | `@arvist/react` | Provider and headless hooks | Yes |
-| `@arvist/react/ui` | Tailwind components built on those hooks | Yes |
+| `@arvist/react/ui` | Ready-made components built on those hooks | Yes |
 
 ## Quick start
 
@@ -232,34 +233,56 @@ mount race cannot swallow the `started` event.
 
 ## Styling
 
-Components are Tailwind-styled and take three escape hatches:
-
-```tsx
-<ExceptionCard
-  exception={exception}
-  className="p-8"                                 // wins over the built-in padding
-  classNames={{ title: 'font-mono', actions: 'grid' }}  // per-slot
-  unstyled                                        // structure only
-/>
-```
-
-Colours come from `--color-arvist-*` theme variables. Redefine them on `:root`
-to rebrand everything at once. Light and dark are both defined; `.arvist-dark`
-forces dark on a subtree. `.arvist-touch` enlarges hit targets for gloved
-operators at arm's length.
-
-Ship the prebuilt stylesheet:
+Components ship plain CSS — no Tailwind, no CSS-in-JS, nothing to configure.
+Import the stylesheet once:
 
 ```ts
 import '@arvist/react/styles.css';
 ```
 
-Or, on Tailwind v4, generate utilities from source instead:
+Everything is scoped under `.arvist-root`, which each component sets on its own
+outermost element, so nothing leaks into the rest of your page.
+
+There are three levels of override, in increasing order of control:
+
+```tsx
+// 1. Retheme everything at once — redefine the tokens on :root or any ancestor.
+:root { --arvist-blocking: #b91c1c; --arvist-radius: 0; }
+
+// 2. Restyle one part of one component.
+<ExceptionCard exception={e} classNames={{ title: 'font-mono', actions: 'my-grid' }} />
+
+// 3. Take the markup and behaviour, drop the visuals entirely.
+<ExceptionCard exception={e} unstyled />
+```
+
+Every component's slot names are exported as a type (`ExceptionCardSlot`,
+`ReconciliationTableSlot`, …), so the override map is autocompleted and
+typo-checked.
+
+Components also set data attributes for the states worth styling on —
+`data-exception-type`, `data-severity`, `data-status`, `data-phase`,
+`data-variance`, `data-connection` — which is usually cleaner than slot classes
+when you want one rule to cover every severity.
+
+Light and dark are both defined. The system preference applies by default;
+`.arvist-dark` or `[data-theme="dark"]` forces dark on a subtree, which is how
+you render a dark packstation panel inside a light admin app. `.arvist-touch`
+enlarges hit targets for gloved operators at arm's length.
+
+**Using Tailwind?** The components don't need it, but you can point Tailwind's
+colour utilities at the same tokens so your markup and the SDK stay in lockstep
+through theme changes:
 
 ```css
-@import 'tailwindcss';
-@source "../node_modules/@arvist/react/dist";
+@theme {
+  --color-arvist-surface: var(--arvist-surface);
+  --color-arvist-blocking: var(--arvist-blocking);
+  /* ... */
+}
 ```
+
+The [example](./examples/packstation) does exactly this.
 
 ## Not using React?
 
@@ -285,7 +308,7 @@ included — that is deliberate, and it caught several real bugs in this SDK.
 
 ```bash
 npm install
-npm test          # 119 tests over the derivation, reconciliation, and transport logic
+npm test          # 166 tests: derivation, reconciliation, transport, and component rendering
 npm run typecheck
 npm run build
 ```

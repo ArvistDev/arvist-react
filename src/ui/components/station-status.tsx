@@ -13,6 +13,8 @@ export interface StationStatusProps extends StyleableProps<StationStatusSlot>, S
   action?: React.ReactNode;
 }
 
+type Tone = 'ok' | 'warning' | 'error' | 'pending';
+
 /**
  * Whether a station is configured and ready to receive work.
  *
@@ -36,48 +38,44 @@ export function StationStatus({
 }: StationStatusProps) {
   const slot = createSlots<StationStatusSlot>({ classNames, unstyled });
 
-  const state: { label: string; tone: string; hint?: string } = loading
-    ? { label: 'Checking…', tone: 'text-arvist-text-muted' }
+  const state: { label: string; tone: Tone; hint?: string } = loading
+    ? { label: 'Checking…', tone: 'pending' }
     : error
-      ? { label: 'Unavailable', tone: 'text-arvist-blocking', hint: error.message }
+      ? { label: 'Unavailable', tone: 'error', hint: error.message }
       : !resolved
         ? {
             label: 'Not configured',
-            tone: 'text-arvist-blocking',
+            tone: 'error',
             hint: `No quality station named "${areaName}" exists at this site. Inspections sent here will be created but never opened.`,
           }
         : hasOpenInspection
           ? {
               label: 'Inspection open',
-              tone: 'text-arvist-warning',
+              tone: 'warning',
               hint: 'An inspection is already running at this station.',
             }
-          : { label: 'Ready', tone: 'text-arvist-ok' };
+          : { label: 'Ready', tone: 'ok' };
 
   return (
     <div
       data-resolved={resolved}
-      className={cn(
-        slot(
-          'root',
-          'arvist-root rounded-[--radius-arvist] border border-arvist-border',
-          'bg-arvist-surface px-4 py-3 text-arvist-text',
-        ),
-        className,
-      )}
+      data-tone={state.tone}
+      className={cn(slot('root', 'arvist-root arvist-station'), className)}
     >
-      <div className={slot('header', 'flex items-center justify-between gap-3')}>
-        <span className={slot('name', 'truncate font-mono text-sm font-semibold')}>
+      <div className={slot('header', 'arvist-station__header')}>
+        <span className={slot('name', 'arvist-station__name')}>
           {station?.area_name ?? station?.name ?? areaName}
         </span>
-        <span className={slot('state', 'shrink-0 text-xs font-medium', state.tone)}>
+        <span
+          className={slot('state', 'arvist-station__state', `arvist-station__state--${state.tone}`)}
+        >
           {state.label}
         </span>
       </div>
-      {state.hint ? (
-        <p className={slot('hint', 'mt-1 text-xs text-arvist-text-muted')}>{state.hint}</p>
+      {state.hint ? <p className={slot('hint', 'arvist-station__hint')}>{state.hint}</p> : null}
+      {action && !resolved ? (
+        <div className={slot('action', 'arvist-station__action')}>{action}</div>
       ) : null}
-      {action && !resolved ? <div className={slot('action', 'mt-2')}>{action}</div> : null}
     </div>
   );
 }

@@ -1,13 +1,14 @@
 'use client';
 
 import * as React from 'react';
-import type { NormalizedException, ResolutionOption } from '../../core/exceptions';
+import { isExceptionOpen, type NormalizedException, type ResolutionOption } from '../../core/exceptions';
 import { cn } from '../cn';
 import { createSlots, type StyleableProps } from '../slots';
 import { ExceptionCard, type ExceptionCardProps } from './exception-card';
 
 export type ExceptionListSlot =
-  | 'root' | 'summary' | 'summaryCount' | 'list' | 'empty' | 'group' | 'groupLabel';
+  | 'root' | 'summary' | 'summaryCount' | 'blockingCount' | 'list' | 'empty'
+  | 'group' | 'groupLabel';
 
 export interface ExceptionListProps extends StyleableProps<ExceptionListSlot> {
   exceptions: NormalizedException[];
@@ -53,10 +54,7 @@ export function ExceptionList({
   const slot = createSlots<ExceptionListSlot>({ classNames, unstyled });
 
   const visible = React.useMemo(
-    () =>
-      openOnly
-        ? exceptions.filter((e) => e.status === 'open' || e.status === 'unresolved')
-        : exceptions,
+    () => (openOnly ? exceptions.filter(isExceptionOpen) : exceptions),
     [exceptions, openOnly],
   );
 
@@ -74,20 +72,16 @@ export function ExceptionList({
       unstyled,
     };
     return (
-      <li key={exception.key}>{renderException ? renderException(props) : <ExceptionCard {...props} />}</li>
+      <li key={exception.key}>
+        {renderException ? renderException(props) : <ExceptionCard {...props} />}
+      </li>
     );
   };
 
   if (visible.length === 0) {
     return (
       <div className={cn(slot('root', 'arvist-root'), className)}>
-        <div
-          className={slot(
-            'empty',
-            'rounded-[--radius-arvist] border border-arvist-border bg-arvist-ok-surface',
-            'px-4 py-6 text-center text-sm text-arvist-text-muted',
-          )}
-        >
+        <div className={slot('empty', 'arvist-exceptions__empty')}>
           {emptyState ?? 'No exceptions. This inspection is clean.'}
         </div>
       </div>
@@ -95,16 +89,14 @@ export function ExceptionList({
   }
 
   return (
-    <div className={cn(slot('root', 'arvist-root space-y-4 text-arvist-text'), className)}>
-      <p className={slot('summary', 'text-sm text-arvist-text-muted')}>
-        <span className={slot('summaryCount', 'font-semibold text-arvist-text')}>
-          {visible.length}
-        </span>{' '}
+    <div className={cn(slot('root', 'arvist-root arvist-exceptions'), className)}>
+      <p className={slot('summary', 'arvist-exceptions__summary')}>
+        <span className={slot('summaryCount', 'arvist-exceptions__count')}>{visible.length}</span>{' '}
         exception{visible.length === 1 ? '' : 's'}
         {blocking.length > 0 ? (
           <>
             {' · '}
-            <span className={slot('summaryCount', 'font-semibold text-arvist-blocking')}>
+            <span className={slot('blockingCount', 'arvist-exceptions__count--blocking')}>
               {blocking.length} blocking
             </span>
           </>
@@ -113,23 +105,26 @@ export function ExceptionList({
 
       {groupBySeverity && blocking.length > 0 ? (
         <>
-          <section className={slot('group', 'space-y-2')}>
-            <h2 className={slot('groupLabel', 'text-xs font-semibold uppercase tracking-wide text-arvist-blocking')}>
+          <section className={slot('group', 'arvist-exceptions__group')}>
+            <h2
+              className={slot(
+                'groupLabel',
+                'arvist-exceptions__group-label arvist-exceptions__group-label--blocking',
+              )}
+            >
               Must resolve
             </h2>
-            <ul className={slot('list', 'space-y-2')}>{blocking.map(card)}</ul>
+            <ul className={slot('list', 'arvist-exceptions__list')}>{blocking.map(card)}</ul>
           </section>
           {rest.length > 0 ? (
-            <section className={slot('group', 'space-y-2')}>
-              <h2 className={slot('groupLabel', 'text-xs font-semibold uppercase tracking-wide text-arvist-text-muted')}>
-                Also flagged
-              </h2>
-              <ul className={slot('list', 'space-y-2')}>{rest.map(card)}</ul>
+            <section className={slot('group', 'arvist-exceptions__group')}>
+              <h2 className={slot('groupLabel', 'arvist-exceptions__group-label')}>Also flagged</h2>
+              <ul className={slot('list', 'arvist-exceptions__list')}>{rest.map(card)}</ul>
             </section>
           ) : null}
         </>
       ) : (
-        <ul className={slot('list', 'space-y-2')}>{visible.map(card)}</ul>
+        <ul className={slot('list', 'arvist-exceptions__list')}>{visible.map(card)}</ul>
       )}
     </div>
   );

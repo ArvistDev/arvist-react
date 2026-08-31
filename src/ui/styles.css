@@ -1,83 +1,831 @@
-@import 'tailwindcss';
-
-/* Scan the SDK's own components so the prebuilt stylesheet covers them. */
-@source "./components/*.tsx";
-
 /**
- * Theme tokens.
+ * @arvist/react component styles.
  *
- * Every colour a component paints comes from one of these. Redefine them on
- * `:root` (or any ancestor) to rebrand the whole SDK without touching a class
- * name — the `--color-arvist-*` names are Tailwind v4 theme variables, so
- * `bg-arvist-surface` and friends resolve to whatever you set here.
+ * Plain CSS with no framework dependency, so the components drop into a
+ * Tailwind app, an MUI app, or a plain-CSS app without any of them having to
+ * agree on tooling. Import once:
+ *
+ *     import '@arvist/react/styles.css';
+ *
+ * Everything is scoped under `.arvist-root`, which every component sets on its
+ * outermost element. Nothing here leaks into the rest of your page.
+ *
+ * To restyle, redefine the custom properties below on `:root` or on any
+ * ancestor — every colour, radius, and font size resolves through them.
+ * To restyle one part of one component, pass `classNames={{ slot: '...' }}`.
+ * To take over completely, pass `unstyled` and keep only the markup.
  */
-@theme {
-  --color-arvist-surface: #ffffff;
-  --color-arvist-surface-muted: #f8fafc;
-  --color-arvist-border: #e2e8f0;
-  --color-arvist-text: #0f172a;
-  --color-arvist-text-muted: #64748b;
 
-  --color-arvist-blocking: #dc2626;
-  --color-arvist-blocking-surface: #fef2f2;
-  --color-arvist-warning: #d97706;
-  --color-arvist-warning-surface: #fffbeb;
-  --color-arvist-info: #2563eb;
-  --color-arvist-info-surface: #eff6ff;
-  --color-arvist-ok: #059669;
-  --color-arvist-ok-surface: #ecfdf5;
+/* ---------------------------------------------------------------------------
+   Tokens
+   --------------------------------------------------------------------------- */
 
-  --radius-arvist: 0.5rem;
+:root {
+  --arvist-surface: #ffffff;
+  --arvist-surface-muted: #f8fafc;
+  --arvist-border: #e2e8f0;
+  --arvist-text: #0f172a;
+  --arvist-text-muted: #64748b;
+
+  --arvist-blocking: #dc2626;
+  --arvist-blocking-surface: #fef2f2;
+  --arvist-warning: #d97706;
+  --arvist-warning-surface: #fffbeb;
+  --arvist-info: #2563eb;
+  --arvist-info-surface: #eff6ff;
+  --arvist-ok: #059669;
+  --arvist-ok-surface: #ecfdf5;
+
+  --arvist-radius: 0.5rem;
+  --arvist-font: inherit;
+  --arvist-font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --arvist-text-sm: 0.875rem;
+  --arvist-text-xs: 0.75rem;
+  --arvist-gap: 0.5rem;
+  --arvist-pad: 1rem;
+  --arvist-focus-ring: 0 0 0 2px rgb(37 99 235 / 0.4);
 }
 
 /*
- * Dark theme. Applies to an explicit `.arvist-dark` / `[data-theme='dark']`
- * scope so a host app in light mode can still render a dark packstation panel,
- * and to `prefers-color-scheme` when nothing is stamped.
+ * Dark theme. An explicit `.arvist-dark` wins everywhere, so a light host page
+ * can still render a dark packstation panel. Otherwise the system preference
+ * applies, unless the subtree is pinned light.
  */
-@layer base {
-  .arvist-dark,
-  [data-theme='dark'] .arvist-root,
-  [data-theme='dark'].arvist-root {
-    --color-arvist-surface: #0f172a;
-    --color-arvist-surface-muted: #1e293b;
-    --color-arvist-border: #334155;
-    --color-arvist-text: #f1f5f9;
-    --color-arvist-text-muted: #94a3b8;
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --arvist-surface: #0f172a;
+    --arvist-surface-muted: #1e293b;
+    --arvist-border: #334155;
+    --arvist-text: #f1f5f9;
+    --arvist-text-muted: #94a3b8;
 
-    --color-arvist-blocking-surface: #450a0a;
-    --color-arvist-warning-surface: #451a03;
-    --color-arvist-info-surface: #172554;
-    --color-arvist-ok-surface: #022c22;
-  }
-
-  @media (prefers-color-scheme: dark) {
-    .arvist-root:not([data-theme='light'] .arvist-root):not(.arvist-light) {
-      --color-arvist-surface: #0f172a;
-      --color-arvist-surface-muted: #1e293b;
-      --color-arvist-border: #334155;
-      --color-arvist-text: #f1f5f9;
-      --color-arvist-text-muted: #94a3b8;
-
-      --color-arvist-blocking-surface: #450a0a;
-      --color-arvist-warning-surface: #451a03;
-      --color-arvist-info-surface: #172554;
-      --color-arvist-ok-surface: #022c22;
-    }
+    --arvist-blocking-surface: #450a0a;
+    --arvist-warning-surface: #451a03;
+    --arvist-info-surface: #172554;
+    --arvist-ok-surface: #022c22;
   }
 }
 
+.arvist-dark,
+[data-theme='dark'] .arvist-root {
+  --arvist-surface: #0f172a;
+  --arvist-surface-muted: #1e293b;
+  --arvist-border: #334155;
+  --arvist-text: #f1f5f9;
+  --arvist-text-muted: #94a3b8;
+
+  --arvist-blocking-surface: #450a0a;
+  --arvist-warning-surface: #451a03;
+  --arvist-info-surface: #172554;
+  --arvist-ok-surface: #022c22;
+}
+
+.arvist-light {
+  --arvist-surface: #ffffff;
+  --arvist-surface-muted: #f8fafc;
+  --arvist-border: #e2e8f0;
+  --arvist-text: #0f172a;
+  --arvist-text-muted: #64748b;
+
+  --arvist-blocking-surface: #fef2f2;
+  --arvist-warning-surface: #fffbeb;
+  --arvist-info-surface: #eff6ff;
+  --arvist-ok-surface: #ecfdf5;
+}
+
+/* ---------------------------------------------------------------------------
+   Base
+   --------------------------------------------------------------------------- */
+
+.arvist-root {
+  color: var(--arvist-text);
+  font-family: var(--arvist-font);
+  box-sizing: border-box;
+}
+
+.arvist-root *,
+.arvist-root *::before,
+.arvist-root *::after {
+  box-sizing: inherit;
+}
+
 /*
- * Packstation ergonomics: operators are often at arm's length, wearing gloves,
- * under warehouse lighting. Opt in per subtree with `.arvist-touch`.
+ * Packstation ergonomics: operators are often at arm's length, in gloves,
+ * under warehouse lighting. Opt in per subtree.
  */
-@layer components {
-  .arvist-touch {
-    font-size: 1.0625rem;
+.arvist-touch {
+  --arvist-text-sm: 1rem;
+  --arvist-text-xs: 0.875rem;
+  font-size: 1.0625rem;
+}
+
+.arvist-touch button,
+.arvist-touch [role='button'] {
+  min-height: 3rem;
+  min-width: 3rem;
+}
+
+/* Shared primitives -------------------------------------------------------- */
+
+.arvist-panel {
+  background: var(--arvist-surface);
+  border: 1px solid var(--arvist-border);
+  border-radius: var(--arvist-radius);
+}
+
+.arvist-btn {
+  appearance: none;
+  background: var(--arvist-surface);
+  border: 1px solid var(--arvist-border);
+  border-radius: var(--arvist-radius);
+  color: var(--arvist-text);
+  cursor: pointer;
+  font: inherit;
+  font-size: var(--arvist-text-sm);
+  font-weight: 500;
+  padding: 0.375rem 0.75rem;
+}
+
+.arvist-btn:hover:not(:disabled) {
+  background: var(--arvist-surface-muted);
+}
+
+.arvist-btn:focus-visible {
+  outline: none;
+  box-shadow: var(--arvist-focus-ring);
+}
+
+.arvist-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.arvist-dot {
+  border-radius: 9999px;
+  display: inline-block;
+  flex-shrink: 0;
+  height: 0.5rem;
+  width: 0.5rem;
+}
+
+.arvist-pill {
+  border-radius: 9999px;
+  flex-shrink: 0;
+  font-size: var(--arvist-text-xs);
+  font-weight: 500;
+  padding: 0.125rem 0.5rem;
+}
+
+.arvist-muted {
+  color: var(--arvist-text-muted);
+}
+
+.arvist-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arvist-scroll-x {
+  overflow-x: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .arvist-root *,
+  .arvist-root *::before,
+  .arvist-root *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
   }
-  .arvist-touch button,
-  .arvist-touch [role='button'] {
-    min-height: 3rem;
-    min-width: 3rem;
+}
+
+/* ---------------------------------------------------------------------------
+   ExceptionCard
+   --------------------------------------------------------------------------- */
+
+.arvist-exception {
+  border: 1px solid var(--arvist-border);
+  border-radius: var(--arvist-radius);
+  padding: var(--arvist-pad);
+}
+
+.arvist-exception--blocking {
+  background: var(--arvist-blocking-surface);
+  border-color: color-mix(in srgb, var(--arvist-blocking) 40%, transparent);
+}
+
+.arvist-exception--warning {
+  background: var(--arvist-warning-surface);
+  border-color: color-mix(in srgb, var(--arvist-warning) 40%, transparent);
+}
+
+.arvist-exception--info {
+  background: var(--arvist-surface-muted);
+}
+
+.arvist-exception--closed {
+  opacity: 0.7;
+}
+
+.arvist-exception__header {
+  align-items: flex-start;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.arvist-exception__badge {
+  align-items: center;
+  display: flex;
+  gap: var(--arvist-gap);
+  min-width: 0;
+}
+
+.arvist-exception__title {
+  font-size: 1rem;
+  font-weight: 600;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arvist-exception__scope {
+  color: var(--arvist-text-muted);
+  flex-shrink: 0;
+  font-size: var(--arvist-text-xs);
+}
+
+.arvist-exception--blocking .arvist-dot {
+  background: var(--arvist-blocking);
+}
+.arvist-exception--warning .arvist-dot {
+  background: var(--arvist-warning);
+}
+.arvist-exception--info .arvist-dot {
+  background: var(--arvist-info);
+}
+
+.arvist-exception--blocking .arvist-exception__status {
+  background: color-mix(in srgb, var(--arvist-blocking) 10%, transparent);
+  color: var(--arvist-blocking);
+}
+.arvist-exception--warning .arvist-exception__status {
+  background: color-mix(in srgb, var(--arvist-warning) 10%, transparent);
+  color: var(--arvist-warning);
+}
+.arvist-exception--info .arvist-exception__status {
+  background: color-mix(in srgb, var(--arvist-info) 10%, transparent);
+  color: var(--arvist-info);
+}
+
+.arvist-exception__description {
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-sm);
+  margin: var(--arvist-gap) 0 0;
+}
+
+.arvist-exception__blocker {
+  color: var(--arvist-blocking);
+  font-size: var(--arvist-text-xs);
+  font-weight: 500;
+  margin: var(--arvist-gap) 0 0;
+}
+
+.arvist-exception__reason {
+  margin-top: 0.75rem;
+}
+
+.arvist-exception__reason-label {
+  color: var(--arvist-text-muted);
+  display: block;
+  font-size: var(--arvist-text-xs);
+  font-weight: 500;
+}
+
+.arvist-exception__reason-input {
+  background: var(--arvist-surface);
+  border: 1px solid var(--arvist-border);
+  border-radius: var(--arvist-radius);
+  color: var(--arvist-text);
+  display: block;
+  font: inherit;
+  font-size: var(--arvist-text-sm);
+  margin-top: 0.25rem;
+  padding: 0.375rem 0.5rem;
+  width: 100%;
+}
+
+.arvist-exception__reason-input:focus-visible {
+  outline: none;
+  box-shadow: var(--arvist-focus-ring);
+}
+
+.arvist-exception__error {
+  color: var(--arvist-blocking);
+  font-size: var(--arvist-text-xs);
+  margin: var(--arvist-gap) 0 0;
+}
+
+.arvist-exception__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--arvist-gap);
+  margin-top: 0.75rem;
+}
+
+.arvist-exception__physical-hint {
+  color: var(--arvist-text-muted);
+  margin-left: 0.25rem;
+}
+
+/* ---------------------------------------------------------------------------
+   ExceptionList
+   --------------------------------------------------------------------------- */
+
+.arvist-exceptions {
+  display: flex;
+  flex-direction: column;
+  gap: var(--arvist-pad);
+}
+
+.arvist-exceptions__summary {
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-sm);
+  margin: 0;
+}
+
+.arvist-exceptions__count {
+  color: var(--arvist-text);
+  font-weight: 600;
+}
+
+.arvist-exceptions__count--blocking {
+  color: var(--arvist-blocking);
+  font-weight: 600;
+}
+
+.arvist-exceptions__group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--arvist-gap);
+}
+
+.arvist-exceptions__group-label {
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  margin: 0;
+  text-transform: uppercase;
+}
+
+.arvist-exceptions__group-label--blocking {
+  color: var(--arvist-blocking);
+}
+
+.arvist-exceptions__list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--arvist-gap);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.arvist-exceptions__empty {
+  background: var(--arvist-ok-surface);
+  border: 1px solid var(--arvist-border);
+  border-radius: var(--arvist-radius);
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-sm);
+  padding: 1.5rem var(--arvist-pad);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------------------------
+   ReconciliationTable
+   --------------------------------------------------------------------------- */
+
+.arvist-recon__table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+.arvist-recon__caption {
+  caption-side: bottom;
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-xs);
+  padding-top: var(--arvist-gap);
+  text-align: left;
+}
+
+.arvist-recon__head {
+  border-bottom: 1px solid var(--arvist-border);
+}
+
+.arvist-recon__head-cell {
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-xs);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: var(--arvist-gap) 0.75rem;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.arvist-recon__cell {
+  font-size: var(--arvist-text-sm);
+  padding: var(--arvist-gap) 0.75rem;
+}
+
+.arvist-recon__num {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.arvist-recon__row {
+  border-top: 1px solid var(--arvist-border);
+}
+
+.arvist-recon__row--over,
+.arvist-recon__row--short {
+  background: var(--arvist-surface-muted);
+}
+
+.arvist-recon__name {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arvist-recon__sku {
+  color: var(--arvist-text-muted);
+  display: block;
+  font-size: var(--arvist-text-xs);
+}
+
+.arvist-recon__flag {
+  color: var(--arvist-info);
+  margin-left: var(--arvist-gap);
+}
+
+.arvist-recon__barcode {
+  color: var(--arvist-text-muted);
+  font-family: var(--arvist-font-mono);
+  font-size: var(--arvist-text-xs);
+}
+
+.arvist-recon__delta--match {
+  color: var(--arvist-text-muted);
+}
+.arvist-recon__delta--over {
+  color: var(--arvist-warning);
+  font-weight: 600;
+}
+.arvist-recon__delta--short {
+  color: var(--arvist-blocking);
+  font-weight: 600;
+}
+
+.arvist-recon__footer {
+  border-top: 1px solid var(--arvist-border);
+  font-weight: 500;
+}
+
+.arvist-recon__total--balanced {
+  color: var(--arvist-ok);
+}
+.arvist-recon__total--unbalanced {
+  color: var(--arvist-warning);
+}
+
+.arvist-recon__off-order {
+  background: var(--arvist-warning-surface);
+  border: 1px solid color-mix(in srgb, var(--arvist-warning) 40%, transparent);
+  border-radius: var(--arvist-radius);
+  font-size: var(--arvist-text-sm);
+  margin-top: 0.75rem;
+  padding: var(--arvist-gap) 0.75rem;
+}
+
+.arvist-recon__off-order-title {
+  font-weight: 500;
+  margin: 0;
+}
+
+.arvist-recon__off-order-list {
+  color: var(--arvist-text-muted);
+  list-style: none;
+  margin: 0.25rem 0 0;
+  padding: 0;
+}
+
+/* ---------------------------------------------------------------------------
+   InspectionStatus
+   --------------------------------------------------------------------------- */
+
+.arvist-status {
+  background: var(--arvist-surface);
+  border: 1px solid var(--arvist-border);
+  border-radius: var(--arvist-radius);
+  padding: var(--arvist-pad);
+}
+
+.arvist-status__phase {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.arvist-status__phase-group {
+  align-items: center;
+  display: flex;
+  gap: var(--arvist-gap);
+  min-width: 0;
+}
+
+.arvist-status__label {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arvist-status__dot {
+  height: 0.625rem;
+  width: 0.625rem;
+}
+
+.arvist-status__dot--idle,
+.arvist-status__dot--canceled {
+  background: var(--arvist-text-muted);
+}
+.arvist-status__dot--starting,
+.arvist-status__dot--in_progress {
+  animation: arvist-pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  background: var(--arvist-info);
+}
+.arvist-status__dot--paused,
+.arvist-status__dot--review {
+  background: var(--arvist-warning);
+}
+.arvist-status__dot--completed {
+  background: var(--arvist-ok);
+}
+.arvist-status__dot--error {
+  background: var(--arvist-blocking);
+}
+
+@keyframes arvist-pulse {
+  50% {
+    opacity: 0.4;
   }
+}
+
+.arvist-status__connection {
+  flex-shrink: 0;
+  font-size: var(--arvist-text-xs);
+  font-weight: 500;
+}
+
+.arvist-status__connection--idle {
+  color: var(--arvist-text-muted);
+}
+.arvist-status__connection--connecting {
+  color: var(--arvist-info);
+}
+.arvist-status__connection--connected {
+  color: var(--arvist-ok);
+}
+.arvist-status__connection--reconnecting {
+  color: var(--arvist-warning);
+}
+.arvist-status__connection--closed {
+  color: var(--arvist-blocking);
+}
+
+.arvist-status__detail {
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-sm);
+  margin: 0.25rem 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arvist-status__progress {
+  margin-top: 0.75rem;
+}
+
+.arvist-status__bar {
+  background: var(--arvist-surface-muted);
+  border-radius: 9999px;
+  height: 0.5rem;
+  overflow: hidden;
+  width: 100%;
+}
+
+.arvist-status__fill {
+  background: var(--arvist-info);
+  border-radius: 9999px;
+  height: 100%;
+  transition: width 300ms ease;
+}
+
+.arvist-status__pct {
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-xs);
+  font-variant-numeric: tabular-nums;
+  margin: 0.25rem 0 0;
+  text-align: right;
+}
+
+/* ---------------------------------------------------------------------------
+   StationStatus
+   --------------------------------------------------------------------------- */
+
+.arvist-station {
+  background: var(--arvist-surface);
+  border: 1px solid var(--arvist-border);
+  border-radius: var(--arvist-radius);
+  padding: 0.75rem var(--arvist-pad);
+}
+
+.arvist-station__header {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: space-between;
+}
+
+.arvist-station__name {
+  font-family: var(--arvist-font-mono);
+  font-size: var(--arvist-text-sm);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.arvist-station__state {
+  flex-shrink: 0;
+  font-size: var(--arvist-text-xs);
+  font-weight: 500;
+}
+
+.arvist-station__state--ok {
+  color: var(--arvist-ok);
+}
+.arvist-station__state--warning {
+  color: var(--arvist-warning);
+}
+.arvist-station__state--error {
+  color: var(--arvist-blocking);
+}
+.arvist-station__state--pending {
+  color: var(--arvist-text-muted);
+}
+
+.arvist-station__hint {
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-xs);
+  margin: 0.25rem 0 0;
+}
+
+.arvist-station__action {
+  margin-top: var(--arvist-gap);
+}
+
+/* ---------------------------------------------------------------------------
+   MediaGallery
+   --------------------------------------------------------------------------- */
+
+.arvist-media__notice {
+  align-items: center;
+  background: var(--arvist-warning-surface);
+  border: 1px solid color-mix(in srgb, var(--arvist-warning) 40%, transparent);
+  border-radius: var(--arvist-radius);
+  display: flex;
+  font-size: var(--arvist-text-xs);
+  gap: 0.75rem;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+  padding: var(--arvist-gap) 0.75rem;
+}
+
+.arvist-media__refresh {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  font-weight: 500;
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.arvist-media__grid {
+  display: grid;
+  gap: 0.75rem;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+@media (min-width: 640px) {
+  .arvist-media__grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (min-width: 1024px) {
+  .arvist-media__grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+
+.arvist-media__item {
+  background: var(--arvist-surface-muted);
+  border: 1px solid var(--arvist-border);
+  border-radius: var(--arvist-radius);
+  display: block;
+  overflow: hidden;
+  padding: 0;
+  text-align: left;
+  width: 100%;
+}
+
+button.arvist-media__item {
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+}
+
+button.arvist-media__item:hover {
+  border-color: var(--arvist-info);
+}
+
+button.arvist-media__item:focus-visible {
+  outline: none;
+  box-shadow: var(--arvist-focus-ring);
+}
+
+.arvist-media__frame {
+  aspect-ratio: 4 / 3;
+  position: relative;
+}
+
+.arvist-media__image {
+  display: block;
+  height: 100%;
+  object-fit: cover;
+  width: 100%;
+}
+
+.arvist-media__placeholder {
+  align-items: center;
+  color: var(--arvist-text-muted);
+  display: flex;
+  font-size: var(--arvist-text-xs);
+  inset: 0;
+  justify-content: center;
+  padding: 0 var(--arvist-gap);
+  position: absolute;
+  text-align: center;
+}
+
+.arvist-media__empty {
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-sm);
+  padding: 1.5rem 0;
+  text-align: center;
+}
+
+.arvist-media__badge {
+  background: var(--arvist-blocking);
+  border-radius: 9999px;
+  color: #ffffff;
+  font-size: 0.625rem;
+  font-weight: 600;
+  padding: 0.0625rem 0.375rem;
+  position: absolute;
+  right: 0.25rem;
+  top: 0.25rem;
+}
+
+.arvist-media__caption {
+  color: var(--arvist-text-muted);
+  font-size: var(--arvist-text-xs);
+  margin: 0;
+  overflow: hidden;
+  padding: 0.375rem var(--arvist-gap);
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }

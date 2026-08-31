@@ -7,7 +7,8 @@ import { cn } from '../cn';
 import { createSlots, type StyleableProps } from '../slots';
 
 export type InspectionStatusSlot =
-  | 'root' | 'phase' | 'dot' | 'label' | 'progress' | 'bar' | 'fill' | 'connection' | 'detail';
+  | 'root' | 'phase' | 'phaseGroup' | 'dot' | 'label' | 'connection' | 'detail'
+  | 'progress' | 'bar' | 'fill' | 'pct';
 
 export interface InspectionStatusProps extends StyleableProps<InspectionStatusSlot> {
   phase: InspectionPhase;
@@ -31,17 +32,6 @@ const PHASE_LABELS: Record<InspectionPhase, string> = {
   error: 'Error',
 };
 
-const PHASE_DOT: Record<InspectionPhase, string> = {
-  idle: 'bg-arvist-text-muted',
-  starting: 'bg-arvist-info animate-pulse',
-  in_progress: 'bg-arvist-info animate-pulse',
-  paused: 'bg-arvist-warning',
-  review: 'bg-arvist-warning',
-  completed: 'bg-arvist-ok',
-  canceled: 'bg-arvist-text-muted',
-  error: 'bg-arvist-blocking',
-};
-
 const CONNECTION_LABELS: Record<ConnectionState, string> = {
   idle: 'Not connected',
   connecting: 'Connecting…',
@@ -50,18 +40,10 @@ const CONNECTION_LABELS: Record<ConnectionState, string> = {
   closed: 'Disconnected',
 };
 
-const CONNECTION_STYLES: Record<ConnectionState, string> = {
-  idle: 'text-arvist-text-muted',
-  connecting: 'text-arvist-info',
-  connected: 'text-arvist-ok',
-  reconnecting: 'text-arvist-warning',
-  closed: 'text-arvist-blocking',
-};
-
 /**
  * Phase, progress and connection in one strip.
  *
- * The connection indicator is not decorative: when the feed drops, the screen
+ * The connection indicator is not decorative. When the feed drops the screen
  * keeps showing the last known state, and without this an operator cannot tell
  * a quiet station from a dead socket.
  */
@@ -79,28 +61,22 @@ export function InspectionStatus({
   const pct = progress == null ? null : Math.round(Math.min(Math.max(progress, 0), 1) * 100);
 
   return (
-    <div
-      data-phase={phase}
-      className={cn(
-        slot(
-          'root',
-          'arvist-root rounded-[--radius-arvist] border border-arvist-border',
-          'bg-arvist-surface p-4 text-arvist-text',
-        ),
-        className,
-      )}
-    >
-      <div className={slot('phase', 'flex items-center justify-between gap-3')}>
-        <div className="flex min-w-0 items-center gap-2">
-          <span aria-hidden className={slot('dot', 'size-2.5 shrink-0 rounded-full', PHASE_DOT[phase])} />
-          <span className={slot('label', 'truncate font-semibold')}>{PHASE_LABELS[phase]}</span>
+    <div data-phase={phase} className={cn(slot('root', 'arvist-root arvist-status'), className)}>
+      <div className={slot('phase', 'arvist-status__phase')}>
+        <div className={slot('phaseGroup', 'arvist-status__phase-group')}>
+          <span
+            aria-hidden="true"
+            className={slot('dot', 'arvist-dot arvist-status__dot', `arvist-status__dot--${phase}`)}
+          />
+          <span className={slot('label', 'arvist-status__label')}>{PHASE_LABELS[phase]}</span>
         </div>
         {!hideConnection && connection ? (
           <span
+            data-connection={connection}
             className={slot(
               'connection',
-              'shrink-0 text-xs font-medium',
-              CONNECTION_STYLES[connection],
+              'arvist-status__connection',
+              `arvist-status__connection--${connection}`,
             )}
           >
             {CONNECTION_LABELS[connection]}
@@ -108,25 +84,21 @@ export function InspectionStatus({
         ) : null}
       </div>
 
-      {detail ? (
-        <p className={slot('detail', 'mt-1 truncate text-sm text-arvist-text-muted')}>{detail}</p>
-      ) : null}
+      {detail ? <p className={slot('detail', 'arvist-status__detail')}>{detail}</p> : null}
 
       {pct != null ? (
-        <div className={slot('progress', 'mt-3')}>
+        <div className={slot('progress', 'arvist-status__progress')}>
           <div
             role="progressbar"
             aria-valuenow={pct}
             aria-valuemin={0}
             aria-valuemax={100}
-            className={slot('bar', 'h-2 w-full overflow-hidden rounded-full bg-arvist-surface-muted')}
+            aria-label="Inspection progress"
+            className={slot('bar', 'arvist-status__bar')}
           >
-            <div
-              className={slot('fill', 'h-full rounded-full bg-arvist-info transition-[width] duration-300')}
-              style={{ width: `${pct}%` }}
-            />
+            <div className={slot('fill', 'arvist-status__fill')} style={{ width: `${pct}%` }} />
           </div>
-          <p className="mt-1 text-right text-xs tabular-nums text-arvist-text-muted">{pct}%</p>
+          <p className={slot('pct', 'arvist-status__pct')}>{pct}%</p>
         </div>
       ) : null}
     </div>

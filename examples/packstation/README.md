@@ -60,6 +60,14 @@ Behind Cloudflare Access, set the service-token pair as well. The two auth
 layers are independent — Access authenticates the device at the edge, the bearer
 token authenticates the caller, and a deployment behind Access needs both.
 
+## Styling note
+
+The app uses Tailwind for its own chrome; the SDK components do not — they ship
+plain CSS. `src/styles.css` maps Tailwind's colour utilities onto the SDK's
+custom properties, so app markup and SDK components stay in visual lockstep
+through theme changes. That mapping is the bit worth copying if you're on
+Tailwind; if you're not, delete it and nothing about the SDK changes.
+
 ## About the mock
 
 Response envelopes mirror the real API exactly, **including its

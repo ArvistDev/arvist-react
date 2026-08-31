@@ -6,7 +6,8 @@ import { cn } from '../cn';
 import { createSlots, type StyleableProps } from '../slots';
 
 export type MediaGallerySlot =
-  | 'root' | 'notice' | 'grid' | 'item' | 'image' | 'placeholder' | 'caption' | 'badge';
+  | 'root' | 'notice' | 'refresh' | 'grid' | 'item' | 'frame' | 'image'
+  | 'placeholder' | 'caption' | 'badge' | 'empty';
 
 export interface MediaGalleryProps extends StyleableProps<MediaGallerySlot> {
   items: FlatMediaItem[];
@@ -43,12 +44,12 @@ export function MediaGallery({
   unstyled,
 }: MediaGalleryProps) {
   const slot = createSlots<MediaGallerySlot>({ classNames, unstyled });
-  const [failed, setFailed] = React.useState<Set<number>>(() => new Set());
+  const [failed, setFailed] = React.useState<ReadonlySet<number>>(() => new Set());
 
   if (items.length === 0) {
     return (
       <div className={cn(slot('root', 'arvist-root'), className)}>
-        <p className={slot('placeholder', 'py-6 text-center text-sm text-arvist-text-muted')}>
+        <p className={slot('empty', 'arvist-media__empty')}>
           {emptyState ?? 'No images captured yet.'}
         </p>
       </div>
@@ -56,80 +57,65 @@ export function MediaGallery({
   }
 
   return (
-    <div className={cn(slot('root', 'arvist-root text-arvist-text'), className)}>
+    <div className={cn(slot('root', 'arvist-root'), className)}>
       {stale ? (
-        <div
-          className={slot(
-            'notice',
-            'mb-3 flex items-center justify-between gap-3 rounded-[--radius-arvist]',
-            'border border-arvist-warning/40 bg-arvist-warning-surface px-3 py-2 text-xs',
-          )}
-        >
+        <div className={slot('notice', 'arvist-media__notice')}>
           <span>These image links are about to expire.</span>
           {onRefresh ? (
-            <button
-              type="button"
-              onClick={onRefresh}
-              className="font-medium underline underline-offset-2"
-            >
+            <button type="button" onClick={onRefresh} className={slot('refresh', 'arvist-media__refresh')}>
               Refresh
             </button>
           ) : null}
         </div>
       ) : null}
 
-      <ul className={slot('grid', 'grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4')}>
+      <ul className={slot('grid', 'arvist-media__grid')}>
         {items.map((item) => {
+          const label = SIDE_LABELS[item.side] ?? item.side;
           const broken = failed.has(item.id) || !item.url;
-          const Wrapper = onSelect ? 'button' : 'div';
+
+          const inner = (
+            <>
+              <div className={slot('frame', 'arvist-media__frame')}>
+                {broken ? (
+                  <span className={slot('placeholder', 'arvist-media__placeholder')}>
+                    Link expired
+                  </span>
+                ) : (
+                  <img
+                    src={item.url}
+                    alt={`${label} view`}
+                    loading="lazy"
+                    onError={() => setFailed((prev) => new Set(prev).add(item.id))}
+                    className={slot('image', 'arvist-media__image')}
+                  />
+                )}
+                {item.damageCount > 0 ? (
+                  <span
+                    className={slot('badge', 'arvist-media__badge')}
+                    aria-label={`${item.damageCount} damage finding(s)`}
+                  >
+                    {item.damageCount}
+                  </span>
+                ) : null}
+              </div>
+              <p className={slot('caption', 'arvist-media__caption')}>{label}</p>
+            </>
+          );
+
           return (
             <li key={item.id}>
-              <Wrapper
-                {...(onSelect
-                  ? { type: 'button' as const, onClick: () => onSelect(item) }
-                  : {})}
-                className={slot(
-                  'item',
-                  'group block w-full overflow-hidden rounded-[--radius-arvist]',
-                  'border border-arvist-border bg-arvist-surface-muted text-left',
-                  onSelect ? 'hover:border-arvist-info focus:outline-none focus:ring-2 focus:ring-arvist-info/40' : '',
-                )}
-              >
-                <div className="relative aspect-4/3">
-                  {broken ? (
-                    <span
-                      className={slot(
-                        'placeholder',
-                        'absolute inset-0 grid place-items-center px-2 text-center text-xs text-arvist-text-muted',
-                      )}
-                    >
-                      Link expired
-                    </span>
-                  ) : (
-                    <img
-                      src={item.url}
-                      alt={`${SIDE_LABELS[item.side] ?? item.side} view`}
-                      loading="lazy"
-                      onError={() => setFailed((prev) => new Set(prev).add(item.id))}
-                      className={slot('image', 'size-full object-cover')}
-                    />
-                  )}
-                  {item.damageCount > 0 ? (
-                    <span
-                      className={slot(
-                        'badge',
-                        'absolute right-1 top-1 rounded-full bg-arvist-blocking',
-                        'px-1.5 py-0.5 text-[10px] font-semibold text-white',
-                      )}
-                    >
-                      {item.damageCount}
-                    </span>
-                  ) : null}
-                </div>
-                <p className={slot('caption', 'truncate px-2 py-1.5 text-xs text-arvist-text-muted')}>
-                  {SIDE_LABELS[item.side] ?? item.side}
-                </p>
-              </Wrapper>
+              {onSelect ? (
+                <button
+                  type="button"
+                  onClick={() => onSelect(item)}
+                  className={slot('item', 'arvist-media__item')}
+                >
+                  {inner}
+                </button>
+              ) : (
+                <div className={slot('item', 'arvist-media__item')}>{inner}</div>
+              )}
             </li>
           );
         })}

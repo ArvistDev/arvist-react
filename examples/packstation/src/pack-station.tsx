@@ -132,14 +132,14 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
         {inspection.error ? (
           <p
             role="alert"
-            className="rounded-[--radius-arvist] border border-arvist-blocking/40 bg-arvist-blocking-surface px-4 py-3 text-sm"
+            className="rounded-[var(--arvist-radius)] border border-arvist-blocking/40 bg-arvist-blocking-surface px-4 py-3 text-sm"
           >
             {getDisplayMessage(inspection.error, resolveErrorMessage)}
           </p>
         ) : null}
 
         {coverage.total > 0 && coverage.ratio < 1 ? (
-          <p className="rounded-[--radius-arvist] border border-arvist-warning/40 bg-arvist-warning-surface px-4 py-2 text-sm">
+          <p className="rounded-[var(--arvist-radius)] border border-arvist-warning/40 bg-arvist-warning-surface px-4 py-2 text-sm">
             {coverage.withUpc} of {coverage.total} lines carry a UPC — the rest fall back to SKU
             matching.
           </p>
@@ -179,7 +179,7 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
             <h2 className="text-sm font-semibold uppercase tracking-wide text-arvist-text-muted">
               Counts
             </h2>
-            <div className="rounded-[--radius-arvist] border border-arvist-border bg-arvist-surface p-3">
+            <div className="rounded-[var(--arvist-radius)] border border-arvist-border bg-arvist-surface p-3">
               <ReconciliationTable
                 reconciliation={inspection.reconciliation}
                 final={inspection.phase === 'completed'}
@@ -208,7 +208,7 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
             type="button"
             onClick={complete}
             disabled={!inspection.completion.canComplete || !inspection.shipment || inspection.loading}
-            className="rounded-[--radius-arvist] bg-arvist-info px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
+            className="rounded-[var(--arvist-radius)] bg-arvist-info px-4 py-2 font-medium text-white disabled:cursor-not-allowed disabled:opacity-40"
           >
             Complete inspection
           </button>
@@ -220,7 +220,7 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
 
       <aside className="space-y-4">
         <DriverPanel backend={backend} live={live} onStart={() => startFromScan('ORD-77421')} />
-        <div className="rounded-[--radius-arvist] border border-arvist-border bg-arvist-surface p-3">
+        <div className="rounded-[var(--arvist-radius)] border border-arvist-border bg-arvist-surface p-3">
           <h2 className="mb-2 text-xs font-semibold uppercase tracking-wide text-arvist-text-muted">
             Event log
           </h2>
@@ -255,7 +255,7 @@ function DriverPanel({
 }) {
   if (live) {
     return (
-      <div className="rounded-[--radius-arvist] border border-arvist-border bg-arvist-surface p-3 text-sm text-arvist-text-muted">
+      <div className="rounded-[var(--arvist-radius)] border border-arvist-border bg-arvist-surface p-3 text-sm text-arvist-text-muted">
         Connected to a live deployment. Start an inspection from the upstream system, or scan a
         tote — the page listens for scanner input anywhere on screen.
       </div>
@@ -263,7 +263,7 @@ function DriverPanel({
   }
 
   return (
-    <div className="space-y-2 rounded-[--radius-arvist] border border-arvist-border bg-arvist-surface p-3">
+    <div className="space-y-2 rounded-[var(--arvist-radius)] border border-arvist-border bg-arvist-surface p-3">
       <h2 className="text-xs font-semibold uppercase tracking-wide text-arvist-text-muted">
         Simulate
       </h2>
@@ -285,7 +285,7 @@ function Btn({ onClick, children }: { onClick: () => void; children: React.React
     <button
       type="button"
       onClick={onClick}
-      className="rounded-[--radius-arvist] border border-arvist-border px-3 py-1.5 text-sm font-medium hover:bg-arvist-surface-muted"
+      className="rounded-[var(--arvist-radius)] border border-arvist-border px-3 py-1.5 text-sm font-medium hover:bg-arvist-surface-muted"
     >
       {children}
     </button>

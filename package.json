@@ -1,7 +1,7 @@
 {
   "name": "@arvist/react",
   "version": "0.1.0",
-  "description": "React SDK for the Arvist API — headless hooks and Tailwind components for quality inspection, exception handling, and live station feeds.",
+  "description": "React SDK for the Arvist API \u2014 headless hooks and dependency-free components for quality inspection, exception handling, and live station feeds.",
   "license": "BUSL-1.1",
   "author": "Arvist",
   "homepage": "https://github.com/ArvistDev/arvist-react#readme",
@@ -19,7 +19,7 @@
     "warehouse",
     "quality-inspection",
     "wms",
-    "tailwind"
+    "exception-handling"
   ],
   "type": "module",
   "sideEffects": [
@@ -54,17 +54,13 @@
   },
   "scripts": {
     "build": "tsup && bun run build:css",
-    "build:css": "tailwindcss -i ./src/ui/styles.css -o ./dist/styles.css --minify",
+    "build:css": "cp ./src/ui/styles.css ./dist/styles.css",
     "dev": "tsup --watch",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint src --ext ts,tsx",
     "prepublishOnly": "bun run typecheck && bun run test && bun run build"
-  },
-  "dependencies": {
-    "clsx": "^2.1.1",
-    "tailwind-merge": "^3.6.0"
   },
   "peerDependencies": {
     "react": "^18.2.0 || ^19.0.0",
@@ -76,10 +72,10 @@
     }
   },
   "devDependencies": {
-    "@tailwindcss/cli": "^4.3.3",
+    "@testing-library/react": "^16.3.0",
     "@types/react": "^19.2.0",
+    "happy-dom": "^20.0.0",
     "react": "^19.2.0",
-    "tailwindcss": "^4.3.3",
     "tsup": "^8.5.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"

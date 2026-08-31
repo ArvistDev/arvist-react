@@ -1,13 +1,13 @@
 'use client';
 
 import * as React from 'react';
-import type { Reconciliation, ReconciledLine } from '../../core/reconcile';
+import type { ReconciledLine, Reconciliation } from '../../core/reconcile';
 import { cn } from '../cn';
 import { createSlots, type StyleableProps } from '../slots';
 
 export type ReconciliationTableSlot =
-  | 'root' | 'table' | 'head' | 'headCell' | 'body' | 'row' | 'cell'
-  | 'sku' | 'delta' | 'flag' | 'footer' | 'offOrder' | 'caption';
+  | 'root' | 'scroll' | 'table' | 'caption' | 'head' | 'headCell' | 'body' | 'row' | 'cell'
+  | 'name' | 'sku' | 'flag' | 'barcode' | 'delta' | 'footer' | 'total' | 'offOrder';
 
 export interface ReconciliationTableProps extends StyleableProps<ReconciliationTableSlot> {
   reconciliation: Reconciliation;
@@ -22,18 +22,12 @@ export interface ReconciliationTableProps extends StyleableProps<ReconciliationT
   showBarcode?: boolean;
 }
 
-const VARIANCE_STYLES: Record<ReconciledLine['variance'], string> = {
-  match: 'text-arvist-text-muted',
-  over: 'text-arvist-warning font-semibold',
-  short: 'text-arvist-blocking font-semibold',
-};
-
 /**
  * Expected versus counted, per line.
  *
- * Off-order items are listed separately at the bottom rather than mixed into
- * the order lines — they have no expected quantity, so showing them as a
- * variance against zero reads as an overage when it is a different problem.
+ * Off-order items are listed separately below rather than mixed into the order
+ * lines — they have no expected quantity, so showing them as a variance against
+ * zero reads as an overage when it is a different problem entirely.
  */
 export function ReconciliationTable({
   reconciliation,
@@ -52,77 +46,84 @@ export function ReconciliationTable({
     [lines, variancesOnly],
   );
 
-  const headCell = slot(
-    'headCell',
-    'px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-arvist-text-muted',
-  );
-  const cell = slot('cell', 'px-3 py-2 text-sm');
+  const headCell = (extra?: string) => slot('headCell', 'arvist-recon__head-cell', extra);
+  const cell = (extra?: string) => slot('cell', 'arvist-recon__cell', extra);
+  const num = 'arvist-recon__num';
+
+  const deltaText = (line: ReconciledLine) =>
+    line.delta > 0 ? `+${line.delta}` : line.delta === 0 ? '—' : String(line.delta);
 
   return (
-    <div className={cn(slot('root', 'arvist-root text-arvist-text'), className)}>
-      <div className="overflow-x-auto">
-        <table className={slot('table', 'w-full border-collapse')}>
+    <div className={cn(slot('root', 'arvist-root'), className)}>
+      <div className={slot('scroll', 'arvist-scroll-x')}>
+        <table className={slot('table', 'arvist-recon__table')}>
           {!final ? (
-            <caption className={slot('caption', 'caption-bottom pt-2 text-xs text-arvist-text-muted')}>
+            <caption className={slot('caption', 'arvist-recon__caption')}>
               Provisional — counts are final only once the inspection completes.
             </caption>
           ) : null}
-          <thead className={slot('head', 'border-b border-arvist-border')}>
+          <thead className={slot('head', 'arvist-recon__head')}>
             <tr>
-              <th className={headCell}>Item</th>
-              {showBarcode ? <th className={headCell}>Barcode</th> : null}
-              <th className={cn(headCell, 'text-right')}>Expected</th>
-              <th className={cn(headCell, 'text-right')}>Counted</th>
-              <th className={cn(headCell, 'text-right')}>Δ</th>
+              <th scope="col" className={headCell()}>Item</th>
+              {showBarcode ? <th scope="col" className={headCell()}>Barcode</th> : null}
+              <th scope="col" className={headCell(num)}>Expected</th>
+              <th scope="col" className={headCell(num)}>Counted</th>
+              <th scope="col" className={headCell(num)}>Δ</th>
             </tr>
           </thead>
-          <tbody className={slot('body', 'divide-y divide-arvist-border')}>
+          <tbody className={slot('body')}>
             {rows.map((line) => (
               <tr
                 key={line.item.id ?? line.item.sku}
                 data-variance={line.variance}
-                className={slot('row', line.variance !== 'match' ? 'bg-arvist-surface-muted' : '')}
+                className={slot('row', 'arvist-recon__row', `arvist-recon__row--${line.variance}`)}
               >
-                <td className={cell}>
-                  <span className="block truncate">{line.item.name || line.item.sku}</span>
-                  <span className={slot('sku', 'block text-xs text-arvist-text-muted')}>
+                <td className={cell()}>
+                  <span className={slot('name', 'arvist-recon__name')}>
+                    {line.item.name || line.item.sku}
+                  </span>
+                  <span className={slot('sku', 'arvist-recon__sku')}>
                     {line.item.sku}
                     {line.manuallyCorrected ? (
-                      <span className={slot('flag', 'ml-2 text-arvist-info')}>hand-corrected</span>
+                      <span className={slot('flag', 'arvist-recon__flag')}>hand-corrected</span>
                     ) : null}
                   </span>
                 </td>
                 {showBarcode ? (
-                  <td className={cn(cell, 'font-mono text-xs text-arvist-text-muted')}>
+                  <td className={cell(slot('barcode', 'arvist-recon__barcode'))}>
                     {line.barcode ?? '—'}
                   </td>
                 ) : null}
-                <td className={cn(cell, 'text-right tabular-nums')}>{line.expected}</td>
-                <td className={cn(cell, 'text-right tabular-nums')}>{line.actual}</td>
+                <td className={cell(num)}>{line.expected}</td>
+                <td className={cell(num)}>{line.actual}</td>
                 <td
-                  className={cn(
-                    cell,
-                    'text-right tabular-nums',
-                    slot('delta', VARIANCE_STYLES[line.variance]),
+                  className={cell(
+                    cn(num, slot('delta', `arvist-recon__delta--${line.variance}`)),
                   )}
                 >
-                  {line.delta > 0 ? `+${line.delta}` : line.delta === 0 ? '—' : line.delta}
+                  {deltaText(line)}
                 </td>
               </tr>
             ))}
           </tbody>
-          <tfoot className={slot('footer', 'border-t border-arvist-border font-medium')}>
+          <tfoot className={slot('footer', 'arvist-recon__footer')}>
             <tr>
-              <td className={cell} colSpan={showBarcode ? 2 : 1}>
+              <td className={cell()} colSpan={showBarcode ? 2 : 1}>
                 {counts.matched}/{lines.length} matched
               </td>
-              <td className={cn(cell, 'text-right tabular-nums')}>{totals.expected}</td>
-              <td className={cn(cell, 'text-right tabular-nums')}>{totals.actual}</td>
+              <td className={cell(num)}>{totals.expected}</td>
+              <td className={cell(num)}>{totals.actual}</td>
               <td
-                className={cn(
-                  cell,
-                  'text-right tabular-nums',
-                  totals.delta === 0 ? 'text-arvist-ok' : 'text-arvist-warning',
+                className={cell(
+                  cn(
+                    num,
+                    slot(
+                      'total',
+                      totals.delta === 0
+                        ? 'arvist-recon__total--balanced'
+                        : 'arvist-recon__total--unbalanced',
+                    ),
+                  ),
                 )}
               >
                 {totals.delta > 0 ? `+${totals.delta}` : totals.delta}
@@ -133,15 +134,9 @@ export function ReconciliationTable({
       </div>
 
       {offOrder.length > 0 ? (
-        <div
-          className={slot(
-            'offOrder',
-            'mt-3 rounded-[--radius-arvist] border border-arvist-warning/40',
-            'bg-arvist-warning-surface px-3 py-2 text-sm',
-          )}
-        >
-          <p className="font-medium">Not on this order</p>
-          <ul className="mt-1 space-y-0.5 text-arvist-text-muted">
+        <div className={slot('offOrder', 'arvist-recon__off-order')}>
+          <p className="arvist-recon__off-order-title">Not on this order</p>
+          <ul className="arvist-recon__off-order-list">
             {offOrder.map((entry) => (
               <li key={entry.sku}>
                 {entry.quantity} ×{' '}
