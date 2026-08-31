@@ -1,0 +1,83 @@
+@import 'tailwindcss';
+
+/* Scan the SDK's own components so the prebuilt stylesheet covers them. */
+@source "./components/*.tsx";
+
+/**
+ * Theme tokens.
+ *
+ * Every colour a component paints comes from one of these. Redefine them on
+ * `:root` (or any ancestor) to rebrand the whole SDK without touching a class
+ * name — the `--color-arvist-*` names are Tailwind v4 theme variables, so
+ * `bg-arvist-surface` and friends resolve to whatever you set here.
+ */
+@theme {
+  --color-arvist-surface: #ffffff;
+  --color-arvist-surface-muted: #f8fafc;
+  --color-arvist-border: #e2e8f0;
+  --color-arvist-text: #0f172a;
+  --color-arvist-text-muted: #64748b;
+
+  --color-arvist-blocking: #dc2626;
+  --color-arvist-blocking-surface: #fef2f2;
+  --color-arvist-warning: #d97706;
+  --color-arvist-warning-surface: #fffbeb;
+  --color-arvist-info: #2563eb;
+  --color-arvist-info-surface: #eff6ff;
+  --color-arvist-ok: #059669;
+  --color-arvist-ok-surface: #ecfdf5;
+
+  --radius-arvist: 0.5rem;
+}
+
+/*
+ * Dark theme. Applies to an explicit `.arvist-dark` / `[data-theme='dark']`
+ * scope so a host app in light mode can still render a dark packstation panel,
+ * and to `prefers-color-scheme` when nothing is stamped.
+ */
+@layer base {
+  .arvist-dark,
+  [data-theme='dark'] .arvist-root,
+  [data-theme='dark'].arvist-root {
+    --color-arvist-surface: #0f172a;
+    --color-arvist-surface-muted: #1e293b;
+    --color-arvist-border: #334155;
+    --color-arvist-text: #f1f5f9;
+    --color-arvist-text-muted: #94a3b8;
+
+    --color-arvist-blocking-surface: #450a0a;
+    --color-arvist-warning-surface: #451a03;
+    --color-arvist-info-surface: #172554;
+    --color-arvist-ok-surface: #022c22;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    .arvist-root:not([data-theme='light'] .arvist-root):not(.arvist-light) {
+      --color-arvist-surface: #0f172a;
+      --color-arvist-surface-muted: #1e293b;
+      --color-arvist-border: #334155;
+      --color-arvist-text: #f1f5f9;
+      --color-arvist-text-muted: #94a3b8;
+
+      --color-arvist-blocking-surface: #450a0a;
+      --color-arvist-warning-surface: #451a03;
+      --color-arvist-info-surface: #172554;
+      --color-arvist-ok-surface: #022c22;
+    }
+  }
+}
+
+/*
+ * Packstation ergonomics: operators are often at arm's length, wearing gloves,
+ * under warehouse lighting. Opt in per subtree with `.arvist-touch`.
+ */
+@layer components {
+  .arvist-touch {
+    font-size: 1.0625rem;
+  }
+  .arvist-touch button,
+  .arvist-touch [role='button'] {
+    min-height: 3rem;
+    min-width: 3rem;
+  }
+}

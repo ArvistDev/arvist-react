@@ -1,0 +1,29 @@
+@import 'tailwindcss';
+
+/* Generate utilities for the SDK's components alongside this app's own. */
+@source "../node_modules/@arvist/react/dist";
+
+@theme {
+  --color-arvist-surface: #ffffff;
+  --color-arvist-surface-muted: #f8fafc;
+  --color-arvist-border: #e2e8f0;
+  --color-arvist-text: #0f172a;
+  --color-arvist-text-muted: #64748b;
+
+  --color-arvist-blocking: #dc2626;
+  --color-arvist-blocking-surface: #fef2f2;
+  --color-arvist-warning: #d97706;
+  --color-arvist-warning-surface: #fffbeb;
+  --color-arvist-info: #2563eb;
+  --color-arvist-info-surface: #eff6ff;
+  --color-arvist-ok: #059669;
+  --color-arvist-ok-surface: #ecfdf5;
+
+  --radius-arvist: 0.5rem;
+}
+
+body {
+  background: var(--color-arvist-surface-muted);
+  color: var(--color-arvist-text);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
