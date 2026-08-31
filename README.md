@@ -4,6 +4,10 @@ React SDK for the [Arvist](https://arvist.ai) API. Headless hooks and Tailwind
 components for quality inspection — live station feeds, exception handling, and
 count reconciliation.
 
+Source-available under the [Business Source License 1.1](./LICENSE): free to
+use in production to build applications that interface with Arvist Services,
+and Apache-2.0 from 2030-03-01. See [License](#license).
+
 The API is straightforward to call. What is not straightforward is everything
 around it: nine operator-facing exception types derived from four stored issue
 rows, realtime topics keyed three different ways, presigned media that expires
@@ -288,4 +292,15 @@ npm run build
 
 ## License
 
-MIT
+[Business Source License 1.1](./LICENSE).
+
+In short: you can read, modify, and redistribute the source freely, and you can
+run it in production **to build applications that talk to Arvist Services**.
+That is the normal case — this SDK does nothing else. Using it against a
+non-Arvist backend in production is not covered; contact licensing@arvist.ai if
+you need different terms.
+
+Each released version converts to the Apache License 2.0 on the Change Date
+(2030-03-01) or four years after it was published, whichever comes first.
+
+SPDX identifier: `BUSL-1.1`.
