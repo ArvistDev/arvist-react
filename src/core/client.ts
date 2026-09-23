@@ -12,6 +12,7 @@ import type {
   ListShipmentsQuery,
   Paginated,
   QualityStation,
+  ResolveIssueByIdInput,
   ResolveIssueInput,
   Shipment,
   SubmitInspectionInput,
@@ -248,17 +249,39 @@ export class ArvistClient {
   }
 
   /**
-   * Sets the status of an exception on a unit session.
+   * Sets the status of a session-scoped exception by unit session and type.
    *
-   * `status` is what actually closes it: `resolved`, `canceled` (the unit leaves
-   * the inspection), `false_positive`, or `unresolved` with a `reason` when it
-   * has to be escalated.
+   * `damage`/`wrong_load`/`no_identifiers` only — those are one-per-session, so
+   * `(unit_session_id, issue_type)` identifies a single row. `status` is what
+   * actually closes it: `resolved`, `canceled` (the unit leaves the
+   * inspection), `false_positive`, or `unresolved` with a `reason` when it has
+   * to be escalated. `unidentified_product`/`wrong_product`/`overage`/
+   * `shortage` are per-instance or session-less and resolve through
+   * {@link ArvistClient.resolveIssueById} instead.
    */
   async resolveIssue(input: ResolveIssueInput, opts?: RequestOptions): Promise<ActionResult> {
     const { unit_session_id, ...body } = input;
     const result = await this.request<unknown>(
       'PUT',
       `/quality/inspection/shipment-issue/unit/${unit_session_id}`,
+      { body, ...opts },
+    );
+    return toActionResult(result);
+  }
+
+  /**
+   * Resolves one issue by id via a keyword `action`.
+   *
+   * The modern per-instance resolve path for `unidentified_product`,
+   * `wrong_product`, `overage`, and `shortage` issues. Each action is valid
+   * for a specific set of issue types and origin statuses — the API 400s if
+   * the pairing doesn't match; see {@link IssueResolveAction}.
+   */
+  async resolveIssueById(input: ResolveIssueByIdInput, opts?: RequestOptions): Promise<ActionResult> {
+    const { issue_id, ...body } = input;
+    const result = await this.request<unknown>(
+      'PATCH',
+      `/quality/inspection/shipment-issue/${issue_id}/resolve`,
       { body, ...opts },
     );
     return toActionResult(result);

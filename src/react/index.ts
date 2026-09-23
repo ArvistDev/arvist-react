@@ -21,11 +21,7 @@ export type {
 } from './hooks/use-inspection';
 
 export { useExceptions } from './hooks/use-exceptions';
-export type {
-  ExceptionHandlers,
-  ResolveArgs,
-  UseExceptionsResult,
-} from './hooks/use-exceptions';
+export type { ResolveArgs, UseExceptionsResult } from './hooks/use-exceptions';
 
 export { useBarcodeScanner, useScanMatch } from './hooks/use-barcode-scanner';
 export type {

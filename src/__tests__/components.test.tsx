@@ -84,8 +84,11 @@ describe('ExceptionCard', () => {
   });
 
   it('asks for a reason before submitting a resolution that requires one', async () => {
+    // `shortage` dropped `mark_unresolved` (no backend action for it) — use
+    // `damage`, which still resolves through the older status-write endpoint
+    // and keeps the generic "escalate with a reason" option.
     const onResolve = vi.fn();
-    render(<ExceptionCard exception={exception()} onResolve={onResolve} />);
+    render(<ExceptionCard exception={exception({ type: 'damage' })} onResolve={onResolve} />);
 
     fireEvent.click(screen.getByRole('button', { name: 'Cannot resolve' }));
     // First click reveals the field rather than submitting an empty reason.
@@ -196,10 +199,10 @@ describe('ExceptionList', () => {
     const onResolve = vi.fn();
     render(<ExceptionList exceptions={[warning]} onResolve={onResolve} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Accept count' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Removed from shipment' }));
     await waitFor(() => expect(onResolve).toHaveBeenCalled());
     expect(onResolve.mock.calls[0]![0].key).toBe('b');
-    expect(onResolve.mock.calls[0]![1].action).toBe('accept_count');
+    expect(onResolve.mock.calls[0]![1].action).toBe('remove_item');
   });
 
   it('lets the host render its own card', () => {

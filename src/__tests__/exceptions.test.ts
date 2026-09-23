@@ -174,12 +174,58 @@ describe('deriveExceptions', () => {
         issue({ id: 2, issue_type: 'wrong_load' }),
         issue({ id: 3, issue_type: 'no_identifiers' }),
         issue({ id: 4, issue_type: 'damage' }),
+        issue({ id: 5, issue_type: 'wrong_product', metadata: { annotation_id: 501 } }),
       ]),
     );
     expect(types).toContain('unidentified_product');
     expect(types).toContain('wrong_load');
     expect(types).toContain('missing_identifiers');
     expect(types).toContain('damage');
+    expect(types).toContain('wrong_product');
+  });
+
+  it('keeps multiple instances of the same per-instance issue type', () => {
+    // unidentified_product/wrong_product are one row per detected annotation —
+    // unlike damage/wrong_load/no_identifiers, several can coexist per session.
+    const types = typesOf(
+      withUnit(
+        [
+          issue({ id: 1, issue_type: 'wrong_product', metadata: { annotation_id: 1 } }),
+          issue({ id: 2, issue_type: 'wrong_product', metadata: { annotation_id: 2 } }),
+        ],
+        'product',
+      ),
+    );
+    expect(types).toEqual(['wrong_product', 'wrong_product']);
+  });
+
+  it('derives overage/shortage from the line item\'s own stored issue when present', () => {
+    const openOverage = issue({ id: 9, issue_type: 'overage', status: 'open', shipment_data_id: 1 });
+    const result = deriveExceptions(
+      shipment({ line_items: [line({ id: 1, expected_quantity: 5, actual_quantity: 8, issue: openOverage })] }),
+    );
+    expect(result).toHaveLength(1);
+    expect(result[0]!.type).toBe('overage');
+    expect(result[0]!.issue).toBe(openOverage);
+    expect(result[0]!.key).toBe('issue:9');
+  });
+
+  it('reports a resolved overage issue as closed even though the count still varies', () => {
+    const resolvedOverage = issue({ id: 9, issue_type: 'overage', status: 'resolved', shipment_data_id: 1 });
+    const [ex] = deriveExceptions(
+      shipment({ line_items: [line({ id: 1, expected_quantity: 5, actual_quantity: 8, issue: resolvedOverage })] }),
+    );
+    expect(ex!.status).toBe('resolved');
+    expect(ex!.blocksCompletion).toBe(false);
+  });
+
+  it('falls back to quantity math when no stored issue exists yet', () => {
+    const [ex] = deriveExceptions(
+      shipment({ line_items: [line({ id: 1, expected_quantity: 5, actual_quantity: 8, issue: null })] }),
+    );
+    expect(ex!.type).toBe('overage');
+    expect(ex!.issue).toBeUndefined();
+    expect(ex!.status).toBe('open');
   });
 
   it('reports a canceled wrong-load as a removed unit', () => {
@@ -238,7 +284,8 @@ describe('deriveExceptions', () => {
 });
 
 describe('collectIssues', () => {
-  it('keeps only the current session and the first row per type', () => {
+  it('keeps only the current session and the first row per session-scoped type', () => {
+    // damage/wrong_load carry no annotation_id and are genuinely one-per-session.
     const s = withUnit([
       issue({ id: 1, issue_type: 'damage' }),
       issue({ id: 2, issue_type: 'damage' }),
@@ -248,6 +295,14 @@ describe('collectIssues', () => {
     expect(collected.map((i) => i.id)).toEqual([1, 3]);
     expect(collected[0]!.unit_id).toBe('unit-1');
     expect(collected[0]!.unit_session_id).toBe(99);
+  });
+
+  it('keeps every distinct instance of a per-instance type', () => {
+    const s = withUnit([
+      issue({ id: 1, issue_type: 'wrong_product', metadata: { annotation_id: 1 } }),
+      issue({ id: 2, issue_type: 'wrong_product', metadata: { annotation_id: 2 } }),
+    ]);
+    expect(collectIssues(s).map((i) => i.id)).toEqual([1, 2]);
   });
 });
 

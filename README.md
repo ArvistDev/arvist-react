@@ -53,11 +53,7 @@ function App() {
 
 function PackStation() {
   const inspection = useInspection({ areaName: 'Z01-PS-001' });
-  const exceptions = useExceptions(inspection.shipment, {
-    onResolved: inspection.refresh,
-    onCorrectCount: ({ lineItem, quantity }) =>
-      inspection.stageCorrection(lineItem, quantity),
-  });
+  const exceptions = useExceptions(inspection.shipment, { onResolved: inspection.refresh });
 
   return (
     <>
@@ -86,35 +82,47 @@ rebuilds its client and reconnects whenever that object's identity changes.
 
 ## What the SDK actually decides for you
 
-### Nine exception types from four stored rows
+### Nine exception types from seven stored rows, in three shapes
 
-The API persists four issue types: `damage`, `unidentified_product`,
-`wrong_load`, `no_identifiers`. An operator screen has to cover nine
-situations. The rest are implied by the line items — a count over or under
-expected, a hand-edited count, or a sentinel SKU standing in for an off-order
-item.
+The API persists seven issue types, in three different shapes:
+
+- **Session-scoped singleton** — `damage`, `wrong_load`, `no_identifiers`. At
+  most one open row per unit session; resolved with a plain status write
+  (`resolveIssue`).
+- **Per-instance** — `unidentified_product`, `wrong_product`. One row per
+  detected annotation, so a session can carry several of the same type;
+  resolved by id with a keyword action (`resolveIssueById`).
+- **Session-less, per line item** — `overage`, `shortage`. At most one open
+  row per line item (`line_items[].issue`), not attached to any unit session;
+  also resolved by id with a keyword action.
+
+An operator screen has to cover nine situations regardless of shape. The rest
+are implied by the line items — a hand-edited count, or a sentinel SKU
+standing in for an off-order item.
 
 `deriveExceptions()` produces the full list, normalised, sorted blocking-first,
 with resolution paths attached:
 
 | Exception | Where it comes from |
 |---|---|
-| Unidentified product | `unidentified_product` row, and/or an `unknown` sentinel line |
-| Wrong product | a `wrong` sentinel line |
-| Overage | `actual_quantity` > `expected_quantity` |
-| Shortage | `actual_quantity` < `expected_quantity` |
+| Unidentified product | `unidentified_product` row(s), and/or an `unknown` sentinel line |
+| Wrong product | `wrong_product` row(s), and/or a `wrong` sentinel line |
+| Overage | `overage` row on the line item, and/or `actual_quantity` > `expected_quantity` |
+| Shortage | `shortage` row on the line item, and/or `actual_quantity` < `expected_quantity` |
 | Manual count correction | `is_edited` on a line |
 | Wrong load *(pallet only)* | `wrong_load` row |
 | Missing identifiers *(pallet only)* | `no_identifiers` row |
 | Unit removed | `wrong_load` row resolved as `canceled` |
 | Damage | `damage` row |
 
-Two things this gets right that are easy to get wrong by hand. An unidentified
-item is recorded **twice** — an issue row *and* an `unknown` sentinel line
-carrying the count — and they are one problem, so the count is folded in and it
-is reported once. And a `wrong_load` closed by cancelling the unit is reported
-as **Unit removed**, because the unit leaving the inspection is what downstream
-systems need to see.
+Three things this gets right that are easy to get wrong by hand. An
+unidentified item is recorded **twice** — an issue row *and* an `unknown`
+sentinel line carrying the count — and they are one problem, so the count is
+folded in and it is reported once. A `wrong_load` closed by cancelling the unit
+is reported as **Unit removed**, because the unit leaving the inspection is
+what downstream systems need to see. And a per-instance issue type keeps every
+detected instance as its own exception rather than collapsing same-type rows
+into one — resolving one `wrong_product` finding never silently closes another.
 
 ### Shortages are provisional until counting is done
 
@@ -132,8 +140,9 @@ of band (a box-closure scan, say). A shortage is then recorded but never blocks.
 
 ### Count corrections are staged, not written
 
-There is no endpoint for editing a line item's count. The API applies
-corrections as part of `submit`. So `useInspection` holds them:
+There is no endpoint for editing a line item's count on its own, outside of
+resolving a `shortage` exception (see below). The API applies a standalone
+correction as part of `submit`. So `useInspection` holds them:
 
 ```tsx
 inspection.stageCorrection(lineItem, 4);
@@ -143,6 +152,17 @@ await inspection.submit(); // flushes them
 
 Staged corrections are layered *over* the fetched shipment rather than written
 into it, so a refetch cannot silently discard them.
+
+A `shortage` exception's own `correct_count` resolution is different: it writes
+immediately, resolving that specific issue row —
+
+```tsx
+exceptions.resolve({ exception, resolution, quantity: 4 });
+```
+
+— rather than waiting for `submit`. Reach for `stageCorrection` only when you
+want a standalone "edit this line's count" control that isn't tied to
+resolving a specific exception.
 
 ### Stations resolve two ways, and can silently go nowhere
 
