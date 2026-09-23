@@ -206,6 +206,22 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
       const eventShipmentId = getEventShipmentId(event);
       if (current != null && eventShipmentId != null && eventShipmentId !== current) return;
 
+      // `status`/`completed`/`canceled` are the three shapes `normalize()` produces
+      // from the *global* `shipment-status/update` topic (`realtime.ts`'s `topics.update`)
+      // — every shipment's lifecycle in the whole deployment, with no per-station or
+      // per-shipment scoping at all, unlike every other topic here (keyed by area id,
+      // or only subscribed once a shipment id is already known). The check above only
+      // filters once `current` is set, so before a shipment is ever bound — no
+      // `started` event has matched this station yet — these three would otherwise
+      // apply *any* shipment's activity anywhere in the org: phase/progress would
+      // look like a live inspection while `shipment` itself stays unset, since only
+      // `started` populates it. Drop them here instead; `completed`/`canceled` also
+      // arrive via their own per-shipment topics, which are never subscribed until
+      // `current` is already set, so this only ever blocks the unscoped path.
+      if (current == null && (event.kind === 'status' || event.kind === 'completed' || event.kind === 'canceled')) {
+        return;
+      }
+
       switch (event.kind) {
         case 'started':
           setShipment(event.shipment);
