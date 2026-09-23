@@ -5,12 +5,13 @@ import { ArvistError } from '../../core/errors';
 import {
   deriveExceptions,
   isExceptionOpen,
+  ISSUE_ACTION_BY_RESOLUTION,
   type ExceptionType,
   type NormalizedException,
   type ResolutionAction,
   type ResolutionOption,
 } from '../../core/exceptions';
-import type { DetectionAnnotation, IssueStatus, LineItem, Shipment } from '../../core/types';
+import type { IssueStatus, ResolveIssueByIdInput, Shipment } from '../../core/types';
 import { useArvist } from '../provider';
 
 export interface ResolveArgs {
@@ -23,34 +24,24 @@ export interface ResolveArgs {
   metadata?: Record<string, unknown>;
   /** For `submit_identifiers`: the pallet identifier that could not be read. */
   identifier?: string;
-  /** For `correct_count`: the corrected quantity. */
+  /** For `correct_count` on a `shortage`: the corrected quantity. */
   quantity?: number;
   /**
-   * For `identify_product`: the detection annotation to reclassify, and what to
-   * reclassify it as. Reclassification works on the annotation rather than the
-   * line item, so this cannot be inferred from the exception alone.
+   * The product sku to apply. Required for `identify_product` and
+   * `correct_product`; optional for `accept_substitute`/`remove_item` when the
+   * operator entered one worth recording for audit.
    */
-  annotation?: { image_id: number; annotation: DetectionAnnotation };
-}
-
-/**
- * Actions the SDK cannot complete on its own.
- *
- * Two resolutions need something only the host app has. A count correction is
- * not a live write — there is no endpoint for it; corrections are staged and
- * submitted with the inspection, so the app decides where they are held.
- * Identifying a product needs the detection annotation the operator picked,
- * which lives in the UI, not in the exception. Supplying these makes those
- * resolutions work; omitting one makes its action fail with a clear message
- * rather than silently doing nothing.
- */
-export interface ExceptionHandlers {
-  /** Stage a corrected count. Flush it via `submit({ line_items })`. */
-  onCorrectCount?: (args: {
-    exception: NormalizedException;
-    lineItem: LineItem;
-    quantity: number;
-  }) => void | Promise<void>;
+  sku?: string;
+  /** For `reassign_product` (`overage`): the sku the extra units actually belong to. */
+  targetSku?: string;
+  /**
+   * For `reassign_product` (`overage`) only: which detected instance on the
+   * line item is being reassigned. `overage` issues are session-less and can
+   * have several candidate detections, so — unlike every other per-instance
+   * action — this can't be inferred from the issue row and the caller must
+   * supply it (e.g. from an image-overlay picker).
+   */
+  annotationId?: number;
 }
 
 export interface UseExceptionsResult {
@@ -84,7 +75,7 @@ const EMPTY_BY_TYPE: Record<ExceptionType, NormalizedException[]> = {
  */
 export function useExceptions(
   shipment: Shipment | undefined,
-  options: { onResolved?: () => void | Promise<void> } & ExceptionHandlers = {},
+  options: { onResolved?: () => void | Promise<void> } = {},
 ): UseExceptionsResult {
   const { client, copy, autoCompleted } = useArvist();
   const [resolving, setResolving] = React.useState<string | null>(null);
@@ -92,8 +83,6 @@ export function useExceptions(
 
   const onResolvedRef = React.useRef(options.onResolved);
   onResolvedRef.current = options.onResolved;
-  const handlersRef = React.useRef<ExceptionHandlers>(options);
-  handlersRef.current = options;
 
   const exceptions = React.useMemo(
     () => deriveExceptions(shipment, { copy, autoCompleted }),
@@ -130,7 +119,7 @@ export function useExceptions(
       setResolving(exception.key);
       setError(undefined);
       try {
-        await applyResolution(client, shipment, args, handlersRef.current);
+        await applyResolution(client, shipment, args);
         await onResolvedRef.current?.();
       } catch (err) {
         const normalized = ArvistError.is(err)
@@ -160,31 +149,21 @@ export function useExceptions(
 /**
  * Routes a resolution to the endpoint that implements it.
  *
- * Side-effecting actions run before the status write, so a failed correction
- * never leaves an exception marked resolved with the underlying data unchanged.
+ * `unidentified_product`/`wrong_product`/`overage`/`shortage` resolve through
+ * the keyword `action` endpoint ({@link ArvistClient.resolveIssueById}) via
+ * {@link ISSUE_ACTION_BY_RESOLUTION}; `damage`/`wrong_load`/
+ * `missing_identifiers` still resolve through the older per-session status
+ * write. `submit_identifiers` and `cancel_unit` are side-effecting calls that
+ * run first, so a failed one never leaves an exception marked resolved with
+ * the underlying data unchanged.
  */
 async function applyResolution(
   client: ReturnType<typeof useArvist>['client'],
   shipment: Shipment,
   args: ResolveArgs,
-  handlers: ExceptionHandlers,
 ): Promise<void> {
-  const { exception, resolution, reason, metadata, identifier, quantity, annotation } = args;
+  const { exception, resolution, reason, metadata, identifier, quantity, sku, targetSku, annotationId } = args;
   const action: ResolutionAction = resolution.action;
-
-  if (action === 'identify_product') {
-    if (!annotation) {
-      throw new ArvistError({
-        code: 'validation_failed',
-        message: 'Pick the detected item and the product it should be before confirming.',
-      });
-    }
-    await client.updateUnknownProduct({
-      shipment_id: shipment.id,
-      image_id: annotation.image_id,
-      annotation: annotation.annotation,
-    });
-  }
 
   if (action === 'submit_identifiers') {
     if (!identifier?.trim()) {
@@ -199,31 +178,7 @@ async function applyResolution(
       identifier: identifier.trim(),
       metadata,
     });
-  }
-
-  if (action === 'correct_count') {
-    if (quantity == null) {
-      throw new ArvistError({
-        code: 'validation_failed',
-        message: 'Enter the corrected quantity before confirming.',
-      });
-    }
-    if (!exception.lineItem?.id) {
-      throw new ArvistError({
-        code: 'validation_failed',
-        message: 'This exception has no line item to correct.',
-      });
-    }
-    if (!handlers.onCorrectCount) {
-      throw new ArvistError({
-        code: 'validation_failed',
-        message:
-          'Count corrections are submitted with the inspection, not written immediately. ' +
-          'Pass `onCorrectCount` to useExceptions to stage them.',
-      });
-    }
-    // Staged, not written: the API applies corrections as part of submit.
-    await handlers.onCorrectCount({ exception, lineItem: exception.lineItem, quantity });
+    return;
   }
 
   if (action === 'cancel_unit') {
@@ -234,10 +189,31 @@ async function applyResolution(
       });
     }
     await client.cancelUnit(shipment.id, exception.unitId);
+    return;
   }
 
-  // Exceptions derived from line items have no issue row to update — the
-  // correction above is the whole resolution.
+  const backendAction = ISSUE_ACTION_BY_RESOLUTION[exception.type]?.[action];
+  if (backendAction) {
+    if (!exception.issue) {
+      throw new ArvistError({
+        code: 'validation_failed',
+        message: 'This exception has no issue row to resolve.',
+      });
+    }
+    await client.resolveIssueById(
+      buildIssueResolveInput(exception.issue.id, backendAction, exception.issue.metadata, {
+        sku,
+        targetSku,
+        annotationId,
+        quantity,
+      }),
+    );
+    return;
+  }
+
+  // Everything left resolves through the older session-scoped status write:
+  // `damage`/`wrong_load`/`missing_identifiers`, none of which are in
+  // ISSUE_ACTION_BY_RESOLUTION above.
   if (exception.unitSessionId == null || !exception.issue) return;
 
   await client.resolveIssue({
@@ -247,4 +223,81 @@ async function applyResolution(
     reason,
     metadata: { ...metadata, resolution_action: action },
   });
+}
+
+/**
+ * Builds the body for {@link ArvistClient.resolveIssueById}, filling in
+ * `annotation_id` from the issue's own metadata where the API can pin it
+ * (`unidentified_product`/`wrong_product`) and validating whatever fields the
+ * chosen action needs but the issue doesn't already know.
+ */
+function buildIssueResolveInput(
+  issueId: number,
+  backendAction: string,
+  issueMetadata: Record<string, unknown> | undefined,
+  input: { sku?: string; targetSku?: string; annotationId?: number; quantity?: number },
+): ResolveIssueByIdInput {
+  const pinnedAnnotationId = issueMetadata?.['annotation_id'] as number | undefined;
+
+  const must = <T,>(value: T | undefined, message: string): T => {
+    if (value == null) throw new ArvistError({ code: 'validation_failed', message });
+    return value;
+  };
+
+  switch (backendAction) {
+    case 'assign':
+      return {
+        issue_id: issueId,
+        action: 'assign',
+        annotation_id: must(pinnedAnnotationId, 'This issue has no annotation to resolve against.'),
+        sku: must(input.sku?.trim(), 'Pick the product this item should be before confirming.'),
+      };
+    case 'invalid':
+      return {
+        issue_id: issueId,
+        action: 'invalid',
+        annotation_id: must(pinnedAnnotationId, 'This issue has no annotation to resolve against.'),
+      };
+    case 'keep_in_order':
+      return {
+        issue_id: issueId,
+        action: 'keep_in_order',
+        annotation_id: must(pinnedAnnotationId, 'This issue has no annotation to resolve against.'),
+        ...(input.sku?.trim() ? { sku: input.sku.trim() } : {}),
+      };
+    case 'correct_product':
+      return {
+        issue_id: issueId,
+        action: 'correct_product',
+        annotation_id: must(pinnedAnnotationId, 'This issue has no annotation to resolve against.'),
+        sku: must(input.sku?.trim(), 'Pick the correct product before confirming.'),
+      };
+    case 'remove_product':
+      return {
+        issue_id: issueId,
+        action: 'remove_product',
+        annotation_id: must(pinnedAnnotationId, 'This issue has no annotation to resolve against.'),
+        ...(input.sku?.trim() ? { sku: input.sku.trim() } : {}),
+      };
+    case 'remove_extra':
+      return { issue_id: issueId, action: 'remove_extra' };
+    case 'reassign':
+      return {
+        issue_id: issueId,
+        action: 'reassign',
+        annotation_id: must(input.annotationId, 'Pick the detected item being reassigned before confirming.'),
+        target_sku: must(input.targetSku?.trim(), 'Pick the product the extra units belong to before confirming.'),
+      };
+    case 'missing_added':
+      return { issue_id: issueId, action: 'missing_added' };
+    case 'wrong_counting':
+      return {
+        issue_id: issueId,
+        action: 'wrong_counting',
+        corrected_quantity: must(input.quantity, 'Enter the corrected quantity before confirming.'),
+      };
+    default:
+      // ISSUE_ACTION_BY_RESOLUTION only ever produces the keywords above.
+      throw new ArvistError({ code: 'unknown', message: `Unhandled issue action "${backendAction}".` });
+  }
 }

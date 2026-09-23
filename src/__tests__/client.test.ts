@@ -246,6 +246,30 @@ describe('submit carries staged count corrections', () => {
   });
 });
 
+describe('resolveIssueById', () => {
+  it('PATCHes the keyword action to the per-issue resolve endpoint', async () => {
+    const fetchImpl = vi.fn(async (_url: RequestInfo | URL, _init?: RequestInit) =>
+      jsonResponse({ message: 'Issue resolved' }),
+    );
+    const result = await makeClient(fetchImpl as never).resolveIssueById({
+      issue_id: 42,
+      action: 'assign',
+      annotation_id: 7,
+      sku: 'SKU-1',
+    });
+
+    const [url, init] = fetchImpl.mock.calls[0]!;
+    expect(String(url)).toContain('/shipment-issue/42/resolve');
+    expect(init!.method).toBe('PATCH');
+    expect(JSON.parse(String(init!.body))).toMatchObject({
+      action: 'assign',
+      annotation_id: 7,
+      sku: 'SKU-1',
+    });
+    expect(result.message).toBe('Issue resolved');
+  });
+});
+
 describe('updateUnknownProduct', () => {
   // Reclassification is annotation-based; the action is inferred server-side
   // from the annotation's shape, so the client must pass it through unaltered.

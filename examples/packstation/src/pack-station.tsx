@@ -52,11 +52,7 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
     },
   });
 
-  const exceptions = useExceptions(inspection.shipment, {
-    onResolved: inspection.refresh,
-    // Count corrections are not a live write — stage them and let submit flush.
-    onCorrectCount: ({ lineItem, quantity }) => inspection.stageCorrection(lineItem, quantity),
-  });
+  const exceptions = useExceptions(inspection.shipment, { onResolved: inspection.refresh });
   // Pass the shipment, not the id — media arrives unit by unit.
   const media = useShipmentMedia(inspection.shipment);
 
@@ -158,13 +154,18 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
                 resolution,
                 reason,
                 // A real screen collects these from the operator; the shapes are
-                // what each action needs.
-                // Reclassifying works on the detection annotation the operator
-                // picked, so a real screen sources this from the image overlay.
-                annotation:
-                  resolution.action === 'identify_product'
-                    ? { image_id: 5000, annotation: { id: 1, category_id: 3, identifiers: { items_quantity: 1 } } }
+                // what each action needs. `identify_product`/`correct_product`
+                // need the sku the operator picked from a product search; the
+                // issue itself already pins which detected instance that's for.
+                sku:
+                  resolution.action === 'identify_product' || resolution.action === 'correct_product'
+                    ? 'SKU-1'
                     : undefined,
+                // `reassign_product` (overage) is the one action that can't
+                // infer its target instance from the issue — a real screen
+                // sources this from the image overlay the operator tapped.
+                annotationId: resolution.action === 'reassign_product' ? 1 : undefined,
+                targetSku: resolution.action === 'reassign_product' ? 'SKU-1' : undefined,
                 identifier: resolution.action === 'submit_identifiers' ? 'LPN-000123' : undefined,
                 quantity:
                   resolution.action === 'correct_count' ? exception.quantities?.expected : undefined,

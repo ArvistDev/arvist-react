@@ -1,11 +1,13 @@
 /**
  * Exception derivation.
  *
- * The API stores four issue *rows* (`damage`, `unidentified_product`,
- * `wrong_load`, `no_identifiers`) but an operator screen has to cover nine
- * distinct situations. The rest are implied by the line items: a counted
- * quantity that is over or under the expected one, a hand-edited count, or a
- * sentinel SKU standing in for an off-order item.
+ * The API stores seven issue *rows* (`damage`, `unidentified_product`,
+ * `wrong_load`, `no_identifiers`, `wrong_product`, `overage`, `shortage`),
+ * in three different shapes — session-scoped singleton, per-instance, and
+ * session-less per-line-item — but an operator screen has to cover nine
+ * distinct situations regardless of shape. The rest are implied by the line
+ * items: a hand-edited count, or a sentinel SKU standing in for an off-order
+ * item.
  *
  * Reimplementing that mapping is the single most error-prone part of an
  * integration, so it lives here. Feed {@link deriveExceptions} whatever you
@@ -65,7 +67,11 @@ export type ResolutionAction =
   /** The system was wrong; no physical discrepancy exists. */
   | 'flag_false_positive'
   /** Cannot be closed here — record why and escalate. */
-  | 'mark_unresolved';
+  | 'mark_unresolved'
+  /** The `wrong_product` call itself was wrong — assign the real line item. */
+  | 'correct_product'
+  /** One detected instance actually belongs to a different sku. */
+  | 'reassign_product';
 
 export interface ResolutionOption {
   action: ResolutionAction;
@@ -112,6 +118,39 @@ const ISSUE_TO_EXCEPTION: Record<IssueType, ExceptionType> = {
   unidentified_product: 'unidentified_product',
   wrong_load: 'wrong_load',
   no_identifiers: 'missing_identifiers',
+  wrong_product: 'wrong_product',
+  overage: 'overage',
+  shortage: 'shortage',
+};
+
+/**
+ * Backend keyword `action` for {@link ArvistClient.resolveIssueById}, per
+ * exception type and {@link ResolutionAction}. Only issue types that resolve
+ * through that endpoint appear here — `damage`/`wrong_load`/
+ * `missing_identifiers` resolve through the older status write instead, and
+ * are absent on purpose.
+ */
+export const ISSUE_ACTION_BY_RESOLUTION: Partial<
+  Record<ExceptionType, Partial<Record<ResolutionAction, string>>>
+> = {
+  unidentified_product: {
+    identify_product: 'assign',
+    remove_item: 'remove_product',
+    flag_false_positive: 'invalid',
+  },
+  wrong_product: {
+    accept_substitute: 'keep_in_order',
+    remove_item: 'remove_product',
+    correct_product: 'correct_product',
+  },
+  overage: {
+    remove_item: 'remove_extra',
+    reassign_product: 'reassign',
+  },
+  shortage: {
+    locate_stock: 'missing_added',
+    correct_count: 'wrong_counting',
+  },
 };
 
 const OPEN_STATUSES: IssueStatus[] = ['open', 'unresolved'];
@@ -161,6 +200,8 @@ export const DEFAULT_EXCEPTION_COPY: ExceptionCopy = {
     acknowledge: 'Acknowledge',
     flag_false_positive: 'Not an issue',
     mark_unresolved: 'Cannot resolve',
+    correct_product: 'Correct the product',
+    reassign_product: 'Reassign to correct product',
   },
 };
 
@@ -194,22 +235,25 @@ export function resolutionsFor(type: ExceptionType, copy: ExceptionCopy): Resolu
         opt('flag_false_positive', copy, { status: 'false_positive' }),
       ];
     case 'wrong_product':
+      // No `mark_unresolved` — the API's keyword resolve endpoint has no
+      // generic "escalate" action for a per-instance issue, only the specific
+      // ones listed here.
       return [
         opt('remove_item', copy, { status: 'resolved', requiresPhysicalAction: true }),
         opt('accept_substitute', copy, { status: 'resolved' }),
-        opt('mark_unresolved', copy, { status: 'unresolved', requiresReason: true }),
+        opt('correct_product', copy, { status: 'false_positive' }),
       ];
     case 'overage':
+      // No "just accept it" action — an overage closes either by physically
+      // removing the extra or by reattributing a detection to another sku.
       return [
-        opt('accept_count', copy, { status: 'resolved' }),
-        opt('correct_count', copy, { status: 'resolved' }),
         opt('remove_item', copy, { status: 'resolved', requiresPhysicalAction: true }),
+        opt('reassign_product', copy, { status: 'false_positive' }),
       ];
     case 'shortage':
       return [
         opt('locate_stock', copy, { status: 'resolved', requiresPhysicalAction: true }),
-        opt('correct_count', copy, { status: 'resolved' }),
-        opt('mark_unresolved', copy, { status: 'unresolved', requiresReason: true }),
+        opt('correct_count', copy, { status: 'false_positive' }),
       ];
     case 'manual_count_correction':
       return [opt('acknowledge', copy, { status: 'resolved' })];
@@ -290,19 +334,34 @@ function inferUnitType(shipment: Pick<Shipment, 'units'> | undefined): ShipmentU
 }
 
 /**
+ * Identifies one issue *instance* within a session: `unidentified_product`/
+ * `wrong_product` carry a flat `metadata.annotation_id` and can have several
+ * rows of the same type per session, one per detected instance, so the type
+ * alone does not identify a row. `damage`/`wrong_load`/`no_identifiers` carry
+ * no `annotation_id` and are genuinely one-per-session, so the type alone is
+ * enough — and is also all the realtime feed sends for them.
+ */
+function issueInstanceKey(issue: Pick<ShipmentIssue, 'issue_type' | 'metadata'>): string {
+  const annotationId = issue.metadata?.['annotation_id'];
+  return annotationId != null ? `${issue.issue_type}:${String(annotationId)}` : issue.issue_type;
+}
+
+/**
  * Flattens issue rows out of a shipment's units, keeping only the current
- * session per unit and the first occurrence of each type within it — which is
- * how the realtime feed dedupes, so REST and websocket views agree.
+ * session per unit and one row per instance (see {@link issueInstanceKey}) —
+ * a defensive dedupe against a duplicate row, not a collapse of distinct
+ * detected instances.
  */
 export function collectIssues(shipment: Pick<Shipment, 'units'> | undefined): ShipmentIssue[] {
   const out: ShipmentIssue[] = [];
   for (const unit of shipment?.units ?? []) {
     const session = unit.quality_sessions?.[0];
     if (!session) continue;
-    const seen = new Set<IssueType>();
+    const seen = new Set<string>();
     for (const issue of session.issues ?? []) {
-      if (seen.has(issue.issue_type)) continue;
-      seen.add(issue.issue_type);
+      const key = issueInstanceKey(issue);
+      if (seen.has(key)) continue;
+      seen.add(key);
       out.push({ ...issue, unit_id: unit.id, unit_session_id: session.id });
     }
   }
@@ -417,18 +476,30 @@ export function deriveExceptions(
       const type: ExceptionType = delta > 0 ? 'overage' : 'shortage';
       const provisional = type === 'shortage' && !countsFinal;
       const blocks = type === 'shortage' && shortageBlocks;
+
+      // `overage`/`shortage` are real stored rows on `line_items[].issue` —
+      // session-less, one open row per line item. When one is present and
+      // matches the direction of the variance, the exception is issue-backed
+      // (resolvable via the issue actions); otherwise it is still reported
+      // from the quantity math alone, e.g. before the server has created the
+      // row yet, with no resolution beyond acknowledging it in the UI.
+      const storedIssue =
+        item.issue && item.issue.issue_type === type ? item.issue : undefined;
+      const open = storedIssue ? OPEN_STATUSES.includes(storedIssue.status) : true;
+
       push({
-        key: lineItemKey(item, type),
+        key: storedIssue ? `issue:${storedIssue.id}` : lineItemKey(item, type),
         type,
-        status: 'open',
-        severity: blocks ? 'blocking' : provisional ? 'info' : 'warning',
+        status: storedIssue ? storedIssue.status : 'open',
+        severity: !open ? 'info' : blocks ? 'blocking' : provisional ? 'info' : 'warning',
         title: copy.titles[type],
         description: provisional
           ? `${item.name || item.sku}: expected ${expected}, ${actual} counted so far — still counting.`
           : `${item.name || item.sku}: expected ${expected}, counted ${actual} ` +
             `(${delta > 0 ? '+' : ''}${delta}).`,
         resolutions: resolutionsFor(type, copy),
-        blocksCompletion: blocks,
+        blocksCompletion: open && blocks,
+        issue: storedIssue,
         lineItem: item,
         palletOnly: false,
         quantities: { expected, actual, delta },
@@ -550,15 +621,17 @@ export function mergeRealtimeIssues<T extends Pick<Shipment, 'units'>>(
       updated_at: new Date().toISOString(),
       issues: [],
     };
-    // Replace by type — the feed sends the authoritative state for a type,
-    // it does not append to it.
-    const byType = new Map(
-      (session.issues ?? []).map((i) => [i.issue_type, i] as const),
+    // Replace by instance — the feed sends the authoritative state for an
+    // instance, it does not append to it. Keyed the same way `collectIssues`
+    // dedupes, so a per-instance type (`unidentified_product`/`wrong_product`)
+    // can carry several rows here without one overwriting another.
+    const byInstance = new Map(
+      (session.issues ?? []).map((i) => [issueInstanceKey(i), i] as const),
     );
-    for (const i of incoming) byType.set(i.issue_type, i);
+    for (const i of incoming) byInstance.set(issueInstanceKey(i), i);
     return {
       ...unit,
-      quality_sessions: [{ ...session, issues: [...byType.values()] }, ...rest],
+      quality_sessions: [{ ...session, issues: [...byInstance.values()] }, ...rest],
     };
   });
 

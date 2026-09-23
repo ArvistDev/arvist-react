@@ -45,6 +45,13 @@ export interface LineItem {
    * matching; see {@link getLineItemBarcode} for the documented fallback order.
    */
   additional_data?: Record<string, unknown> | null;
+  /**
+   * The line item's own open `overage`/`shortage` issue, when one exists.
+   * Session-less — at most one open row per line item — unlike the per-unit
+   * issues on {@link ShipmentUnitSession.issues}. `null`/absent means no open
+   * aggregate issue, not that the count reconciles.
+   */
+  issue?: ShipmentIssue | null;
 }
 
 export interface Shipment {
@@ -101,12 +108,25 @@ export interface ShipmentPalletIdentifier {
 // ---------------------------------------------------------------------------
 
 /**
- * Issue categories the API persists. This is deliberately smaller than the
- * operator-facing exception taxonomy: quantity exceptions (overage, shortage,
- * wrong product, manual correction) are *derived* from line items rather than
- * stored as rows. Use {@link deriveExceptions} to get the full picture.
+ * Issue categories the API persists.
+ *
+ * `damage`/`wrong_load`/`no_identifiers` are session-scoped singletons — at
+ * most one open row per unit session — and resolve through
+ * {@link ArvistClient.resolveIssue}. `unidentified_product`/`wrong_product`
+ * are per-instance: a session can hold several rows of the same type, one per
+ * detected annotation. `overage`/`shortage` are session-less, one open row per
+ * line item (`LineItem.issue`). The latter four resolve through
+ * {@link ArvistClient.resolveIssueById}. Use {@link deriveExceptions} to get
+ * the full operator-facing picture regardless of which shape a type uses.
  */
-export type IssueType = 'damage' | 'unidentified_product' | 'wrong_load' | 'no_identifiers';
+export type IssueType =
+  | 'damage'
+  | 'unidentified_product'
+  | 'wrong_load'
+  | 'no_identifiers'
+  | 'wrong_product'
+  | 'overage'
+  | 'shortage';
 
 export type IssueStatus = 'open' | 'resolved' | 'canceled' | 'unresolved' | 'false_positive';
 
@@ -119,6 +139,13 @@ export interface ShipmentIssue {
   created_at: string;
   updated_at: string;
   resolved_at?: string;
+  /**
+   * The line item this issue resolves onto. Always set for a session-less
+   * `overage`/`shortage` row (it's how the row is scoped to a line item in the
+   * first place); set on other types once a resolution assigns one (e.g.
+   * `assign`/`correct_product`).
+   */
+  shipment_data_id?: number;
   /** Attached by the SDK when an issue is read through a unit. */
   unit_id?: string;
   /** Attached by the SDK so a resolution can be routed without a second lookup. */
@@ -319,6 +346,12 @@ export interface SubmitInspectionInput {
   shipment_key?: string;
 }
 
+/**
+ * `damage`/`wrong_load`/`no_identifiers` only — a raw status write, keyed by
+ * unit session and type. `unidentified_product`/`wrong_product`/`overage`/
+ * `shortage` resolve through {@link ResolveIssueByIdInput} instead: those are
+ * per-instance or session-less, so "by type" no longer identifies one row.
+ */
 export interface ResolveIssueInput {
   unit_session_id: number;
   issue_type: IssueType;
@@ -328,3 +361,44 @@ export interface ResolveIssueInput {
   metadata?: Record<string, unknown>;
   site_id?: number;
 }
+
+/**
+ * Keyword actions for {@link ArvistClient.resolveIssueById}, one union member
+ * per action the API accepts. Each is valid for a specific set of issue types
+ * and origin statuses — the API 400s on a mismatch — mirrored in
+ * {@link import('./exceptions').resolutionsFor}, which only ever offers an
+ * action for the exception type it actually applies to.
+ *
+ * For `unidentified_product`/`wrong_product`, `annotation_id` is the
+ * annotation the issue row already pins (`issue.metadata.annotation_id`) —
+ * required by the API as a check against stale data, but the SDK fills it in
+ * from the issue itself; callers only supply the fields the issue doesn't
+ * already know (`sku`). `overage` issues are session-less and can have several
+ * candidate annotations on the same line item, so `reassign` needs the caller
+ * to pick one explicitly.
+ */
+export type IssueResolveAction =
+  /** `unidentified_product` (open/false_positive) → resolved. */
+  | { action: 'assign'; annotation_id: number; sku: string }
+  /** `unidentified_product` (open) → false_positive: the detection itself was noise. */
+  | { action: 'invalid'; annotation_id: number }
+  /** `wrong_product`/`unidentified_product` (open) → resolved: kept and shipped as-is. */
+  | { action: 'keep_in_order'; annotation_id: number; sku?: string }
+  /** `wrong_product` (open) → false_positive: the wrong_product call itself was wrong. */
+  | { action: 'correct_product'; annotation_id: number; sku: string }
+  /** `wrong_product`/`unidentified_product` (open) → resolved: physically pulled. */
+  | { action: 'remove_product'; annotation_id: number; sku?: string }
+  /** `overage` (open) → resolved: the extra units were physically removed. */
+  | { action: 'remove_extra' }
+  /**
+   * `overage` (open) → false_positive: one detected instance belongs to a
+   * different sku. `annotation_id` picks which detected instance on the line
+   * item is being reassigned — the issue itself does not pin one.
+   */
+  | { action: 'reassign'; annotation_id: number; target_sku: string }
+  /** `shortage` (open) → resolved: the missing units were located and re-counted. */
+  | { action: 'missing_added' }
+  /** `shortage` (open) → false_positive: the expected count itself was wrong. */
+  | { action: 'wrong_counting'; corrected_quantity: number };
+
+export type ResolveIssueByIdInput = { issue_id: number; site_id?: number } & IssueResolveAction;

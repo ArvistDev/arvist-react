@@ -72,7 +72,14 @@ export interface UseInspectionResult {
    * {@link UseInspectionResult.submit} flushes them.
    */
   corrections: LineItemCorrection[];
-  /** Stages a corrected count. Wire this to `useExceptions`' `onCorrectCount`. */
+  /**
+   * Stages a corrected count for a real order line. This is a general,
+   * submit-time edit — independent of exception resolution. A `shortage`
+   * exception's own `correct_count` resolution writes immediately through
+   * `useExceptions().resolve` instead (`PATCH .../shipment-issue/:id/resolve`,
+   * action `wrong_counting`); reach for this only when the host wants a
+   * standalone "edit this line's count" control outside that flow.
+   */
   stageCorrection: (lineItem: LineItem, quantity: number) => void;
   clearCorrections: () => void;
 
