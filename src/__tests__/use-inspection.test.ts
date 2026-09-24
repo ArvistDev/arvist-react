@@ -50,6 +50,14 @@ function wrapper(transport: RealtimeTransport, fetchImpl?: typeof globalThis.fet
     React.createElement(ArvistProvider, { client, realtime: { transport } }, children);
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((res) => {
+    resolve = res;
+  });
+  return { promise, resolve };
+}
+
 function minimalShipment(id: number, over: Record<string, unknown> = {}) {
   return {
     id,
@@ -113,6 +121,121 @@ describe('useInspection: global status topic scoping', () => {
     });
     expect(result.current.phase).toBe('review');
     expect(result.current.progress).toBe(0.75);
+  });
+});
+
+describe('useInspection: stale async responses cannot clobber a newer shipment', () => {
+  it('refresh() for a shipment that is no longer tracked does not overwrite the new one', async () => {
+    const transport = fakeTransport();
+    const staleResponse = deferred<Response>();
+
+    const fetchImpl = async (url: RequestInfo | URL) => {
+      const href = String(url);
+      if (href.includes('/quality/inspection/shipment/32')) {
+        // Held open until the test explicitly resolves it, simulating a slow
+        // response that lands after a different shipment is already bound.
+        return staleResponse.promise;
+      }
+      return jsonResponse({});
+    };
+
+    const { result } = renderHook(() => useInspection({ areaName: 'Z01' }), {
+      wrapper: wrapper(transport, fetchImpl as never),
+    });
+
+    // Bind shipment 32 the normal way — a real `started` event, not an
+    // explicit `shipmentId` option (which would keep falling back to itself
+    // and could never let a genuinely different shipment take over).
+    act(() => {
+      transport.emit(topics.start('Z01'), { shipment: minimalShipment(32) });
+    });
+    expect(result.current.shipment?.id).toBe(32);
+
+    // Kick off a refresh for 32 — its response will stay pending until
+    // resolved below, well after shipment 30 is bound.
+    let refreshDone: Promise<void>;
+    act(() => {
+      refreshDone = result.current.refresh();
+    });
+
+    // Cancel drops the tracked shipment (a real app calls `clear()` once it
+    // is done with 32 — the mismatch filter above deliberately rejects a
+    // `started` event for a *different* shipment while one is still tracked,
+    // so this is what actually happens between "done with 32" and "watching
+    // for whatever starts next"), then a real `started` event for a
+    // different shipment arrives and is bound immediately.
+    act(() => {
+      result.current.clear();
+    });
+    act(() => {
+      transport.emit(topics.start('Z01'), { shipment: minimalShipment(30) });
+    });
+    expect(result.current.shipment?.id).toBe(30);
+
+    // Now the stale response for 32 finally lands.
+    await act(async () => {
+      staleResponse.resolve(jsonResponse(minimalShipment(32)));
+      await refreshDone;
+    });
+
+    // It must not have overwritten the newer, currently-bound shipment.
+    expect(result.current.shipment?.id).toBe(30);
+  });
+
+  it('adoptStationShipment() does not overwrite a shipment bound while its own fetch was in flight', async () => {
+    const transport = fakeTransport();
+    const staleResponse = deferred<Response>();
+
+    const fetchImpl = async (url: RequestInfo | URL) => {
+      const href = String(url);
+      if (href.includes('/quality/inspection/shipment/7')) {
+        // Held open — simulates the station-scoped lookup's own `getShipment`
+        // call still being in flight when a real `started` event for a
+        // *different* shipment (5) arrives and binds immediately.
+        return staleResponse.promise;
+      }
+      if (href.includes('/quality/inspection/shipment')) {
+        return jsonResponse({ data: [{ id: 7 }], total: 1, page: 1, limit: 1 });
+      }
+      return jsonResponse({});
+    };
+
+    const { result } = renderHook(() => useInspection({ areaName: 'Mobile' }), {
+      wrapper: wrapper(transport, fetchImpl as never),
+    });
+
+    // Unscoped status event, no shipment tracked yet — triggers the
+    // station-scoped adoption lookup. Let its `listShipments` call resolve
+    // (nothing is bound yet, so its first staleness check passes) and let it
+    // reach — and hang on — the stale `getShipment(7)` call above, *before*
+    // anything else happens. Otherwise the `started` event below would bind
+    // shipment 5 before `listShipments` even resolves, and the lookup would
+    // bail out on its *first* staleness check instead of the second one this
+    // test targets.
+    await act(async () => {
+      transport.emit(topics.update(), { shipment_id: 7, status: 'in_progress', progress: 0 });
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // A real `started` event for a genuinely different shipment (5) arrives
+    // while the lookup above is still waiting on `getShipment(7)`, and binds
+    // immediately — nothing was tracked yet, so it isn't filtered.
+    act(() => {
+      transport.emit(topics.start('Mobile'), { shipment: minimalShipment(5) });
+    });
+    expect(result.current.shipment?.id).toBe(5);
+
+    // Now the stale adoption lookup for shipment 7 finally resolves. Several
+    // microtask ticks: the fetch promise, then `response.json()`, then the
+    // client's own await chain, before `adoptStationShipment` even reaches
+    // its post-fetch staleness check.
+    await act(async () => {
+      staleResponse.resolve(jsonResponse(minimalShipment(7)));
+      for (let i = 0; i < 6; i++) await Promise.resolve();
+    });
+
+    // It must not have overwritten the shipment bound in the meantime.
+    expect(result.current.shipment?.id).toBe(5);
   });
 });
 
