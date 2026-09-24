@@ -1,4 +1,4 @@
-import { act, renderHook } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import * as React from 'react';
 import { describe, expect, it } from 'vitest';
 import { ArvistClient } from '../core/client';
@@ -37,10 +37,34 @@ function fakeTransport(): RealtimeTransport & { emit: (topic: string, payload: u
   };
 }
 
-function wrapper(transport: RealtimeTransport) {
-  const client = new ArvistClient({ baseUrl: 'https://arvist.example.com', fetch: (async () => new Response('{}')) as never });
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+}
+
+function wrapper(transport: RealtimeTransport, fetchImpl?: typeof globalThis.fetch) {
+  const client = new ArvistClient({
+    baseUrl: 'https://arvist.example.com',
+    fetch: (fetchImpl ?? (async () => jsonResponse({}))) as never,
+  });
   return ({ children }: { children: React.ReactNode }) =>
     React.createElement(ArvistProvider, { client, realtime: { transport } }, children);
+}
+
+function minimalShipment(id: number, over: Record<string, unknown> = {}) {
+  return {
+    id,
+    shipment_key: `k${id}`,
+    type: 'outbound',
+    status: 'in_progress',
+    site_id: 1,
+    confidence: null,
+    order_numbers: [],
+    supplier: 'ACME',
+    created_at: '',
+    updated_at: '',
+    line_items: [],
+    ...over,
+  };
 }
 
 describe('useInspection: global status topic scoping', () => {
@@ -73,21 +97,7 @@ describe('useInspection: global status topic scoping', () => {
     });
 
     act(() => {
-      transport.emit(topics.start('Z01'), {
-        shipment: {
-          id: 5,
-          shipment_key: 'k',
-          type: 'outbound',
-          status: 'in_progress',
-          site_id: 1,
-          confidence: null,
-          order_numbers: [],
-          supplier: 'ACME',
-          created_at: '',
-          updated_at: '',
-          line_items: [],
-        },
-      });
+      transport.emit(topics.start('Z01'), { shipment: minimalShipment(5) });
     });
     expect(result.current.phase).toBe('in_progress');
 
@@ -103,5 +113,106 @@ describe('useInspection: global status topic scoping', () => {
     });
     expect(result.current.phase).toBe('review');
     expect(result.current.progress).toBe(0.75);
+  });
+});
+
+describe('useInspection: adopting a shipment via the status-triggered station lookup', () => {
+  // `started` is only ever emitted for an M2M-initiated start — a
+  // dashboard/user-authenticated one never sends it (see
+  // `startShipmentProcessing`'s own comment on that emit in arvist/api).
+  // Without this fallback, `shipment` would never populate for that case no
+  // matter how correctly everything else here is wired.
+
+  function fetchRouter(routes: { listShipments?: unknown; getShipment?: Record<number, unknown> }) {
+    return async (url: RequestInfo | URL) => {
+      const href = String(url);
+      if (href.includes('/quality/inspection/shipment/')) {
+        const id = Number(href.split('/quality/inspection/shipment/')[1]!.split(/[/?]/)[0]);
+        const body = routes.getShipment?.[id];
+        return body ? jsonResponse(body) : jsonResponse({ message: 'not found' }, 404);
+      }
+      if (href.includes('/quality/inspection/shipment')) {
+        return jsonResponse(routes.listShipments ?? { data: [], total: 0, page: 1, limit: 1 });
+      }
+      return jsonResponse({});
+    };
+  }
+
+  it('adopts the station\'s in-progress shipment on an unscoped status event', async () => {
+    const transport = fakeTransport();
+    const shipment7 = minimalShipment(7, { status: 'in_progress' });
+    const fetchImpl = fetchRouter({
+      listShipments: { data: [{ id: 7 }], total: 1, page: 1, limit: 1 },
+      getShipment: { 7: shipment7 },
+    });
+    const { result } = renderHook(() => useInspection({ areaName: 'Mobile' }), {
+      wrapper: wrapper(transport, fetchImpl as never),
+    });
+
+    expect(result.current.shipment).toBeUndefined();
+
+    // No `started` event — as if this inspection was started from the
+    // dashboard, not an M2M device — only the unscoped `status` broadcast
+    // that always accompanies a start regardless of who triggered it.
+    act(() => {
+      transport.emit(topics.update(), { shipment_id: 7, status: 'in_progress', progress: 0 });
+    });
+
+    await waitFor(() => expect(result.current.shipment?.id).toBe(7));
+    expect(result.current.phase).toBe('in_progress');
+  });
+
+  it('does not adopt anything when no shipment is actually in progress at this station', async () => {
+    const transport = fakeTransport();
+    let listResolved = false;
+    const fetchImpl = async (url: RequestInfo | URL) => {
+      const href = String(url);
+      if (href.includes('/quality/inspection/shipment')) {
+        listResolved = true;
+        return jsonResponse({ data: [], total: 0, page: 1, limit: 1 });
+      }
+      return jsonResponse({});
+    };
+    const { result } = renderHook(() => useInspection({ areaName: 'Mobile' }), {
+      wrapper: wrapper(transport, fetchImpl as never),
+    });
+
+    // A genuinely unrelated shipment's status update — the station-scoped
+    // lookup comes back empty, so nothing gets adopted.
+    act(() => {
+      transport.emit(topics.update(), { shipment_id: 999, status: 'in_progress', progress: 0 });
+    });
+
+    await waitFor(() => expect(listResolved).toBe(true));
+    expect(result.current.shipment).toBeUndefined();
+    expect(result.current.phase).toBe('idle');
+  });
+
+  it('does not run the station lookup when an explicit shipmentId is given', async () => {
+    const transport = fakeTransport();
+    let listCalled = false;
+    const fetchImpl = async (url: RequestInfo | URL) => {
+      const href = String(url);
+      if (href.includes('/quality/inspection/shipment/9')) {
+        return jsonResponse(minimalShipment(9));
+      }
+      if (href.includes('/quality/inspection/shipment')) {
+        listCalled = true;
+        return jsonResponse({ data: [], total: 0, page: 1, limit: 1 });
+      }
+      return jsonResponse({});
+    };
+    const { result } = renderHook(() => useInspection({ areaName: 'Mobile', shipmentId: 9 }), {
+      wrapper: wrapper(transport, fetchImpl as never),
+    });
+
+    await waitFor(() => expect(result.current.shipment?.id).toBe(9));
+
+    act(() => {
+      transport.emit(topics.update(), { shipment_id: 999, status: 'in_progress', progress: 0 });
+    });
+
+    expect(listCalled).toBe(false);
+    expect(result.current.shipment?.id).toBe(9);
   });
 });

@@ -25,7 +25,12 @@ export type InspectionPhase =
   | 'error';
 
 export interface UseInspectionOptions {
-  /** Station name, e.g. `Z01-PS-001`. Required to receive `started` events. */
+  /**
+   * Station name, e.g. `Z01-PS-001`. Required to receive `started` events, and
+   * to adopt a shipment via the `status`-triggered station lookup (see
+   * {@link UseInspectionResult.shipment}) for a dashboard/M2M-authenticated
+   * start, which never emits `started` at all.
+   */
   areaName?: string;
   /**
    * Station id. Required to receive per-unit events. Resolved from `areaName`
@@ -193,6 +198,43 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
     }
   }, [client]);
 
+  const adoptingStationShipmentRef = React.useRef(false);
+
+  /**
+   * `status` (`shipment-status/update`) is the one topic with no scoping at
+   * all — surviving the filters above only proves *some* shipment changed
+   * somewhere, never that it's this station's. `started`, the topic that
+   * would normally identify it, is only ever emitted for an M2M-initiated
+   * start (the API deliberately skips it for a dashboard/user-authenticated
+   * one — see `startShipmentProcessing`'s own comment on that emit); without
+   * this, a start triggered any other way would never populate `shipment` at
+   * all, no matter how correctly everything else here is wired.
+   *
+   * Confirms it the safe way instead of trusting the event: ask the API which
+   * shipment, if any, is actually in progress at *this* station right now,
+   * and only ever adopt what that authoritative, station-scoped lookup
+   * returns — never the raw event payload, which carries no station
+   * information to verify against in the first place.
+   */
+  const adoptStationShipment = React.useCallback(async () => {
+    if (!areaName || explicitShipmentId != null || adoptingStationShipmentRef.current) return;
+    adoptingStationShipmentRef.current = true;
+    try {
+      const open = await client.listShipments({ areaName, status: 'in_progress', limit: 1 });
+      const match = open.data[0];
+      // Re-check after the await: a `started` event (or a previous call to
+      // this) may have already bound a shipment while this was in flight.
+      if (!match || shipmentIdRef.current != null) return;
+      const fresh = await client.getShipment(match.id);
+      setShipment(fresh);
+      setPhase(phaseFromStatus(fresh.status));
+    } catch {
+      // Best-effort — the next `status` event tries again.
+    } finally {
+      adoptingStationShipmentRef.current = false;
+    }
+  }, [client, areaName, explicitShipmentId]);
+
   React.useEffect(() => {
     if (!feed) return;
 
@@ -215,10 +257,14 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
       // `started` event has matched this station yet — these three would otherwise
       // apply *any* shipment's activity anywhere in the org: phase/progress would
       // look like a live inspection while `shipment` itself stays unset, since only
-      // `started` populates it. Drop them here instead; `completed`/`canceled` also
-      // arrive via their own per-shipment topics, which are never subscribed until
-      // `current` is already set, so this only ever blocks the unscoped path.
+      // `started` populates it. Dropped here for the same reason; `completed`/
+      // `canceled` also arrive via their own per-shipment topics, which are never
+      // subscribed until `current` is already set, so this only ever blocks the
+      // unscoped path. `status` gets one more chance first, below, since it's the
+      // only one of the three that a legitimate, still-unbound inspection actually
+      // relies on (see `adoptStationShipment`).
       if (current == null && (event.kind === 'status' || event.kind === 'completed' || event.kind === 'canceled')) {
+        if (event.kind === 'status') void adoptStationShipment();
         return;
       }
 
@@ -278,7 +324,7 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
     });
     // `refetchOn` is spread so a fresh array literal does not resubscribe.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [feed, refresh, ...refetchOn]);
+  }, [feed, refresh, adoptStationShipment, ...refetchOn]);
 
   // --- completion callback --------------------------------------------------
   const completedFiredFor = React.useRef<number | undefined>(undefined);
