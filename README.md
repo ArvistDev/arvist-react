@@ -41,11 +41,24 @@ import { ArvistProvider, useInspection, useExceptions } from '@arvist/react';
 import { ExceptionList, InspectionStatus } from '@arvist/react/ui';
 import '@arvist/react/styles.css';
 
-const config = { baseUrl: 'https://arvist.example.com', token: getToken, siteId: 1 };
+const config = {
+  baseUrl: 'https://arvist.example.com',
+  token: getToken,
+  siteId: 1,
+  // Only needed when the deployment sits behind Cloudflare Access — these
+  // authenticate the device at the edge, independent of `token`.
+  // cloudflareAccess: { clientId, clientSecret },
+};
 
 function App() {
   return (
-    <ArvistProvider config={config} realtime={{ io }}>
+    <ArvistProvider
+      config={config}
+      // `realtime.url` defaults to `config.baseUrl`. Pass it explicitly
+      // whenever the app and the realtime server are on different origins —
+      // e.g. running the app locally against a remote staging deployment.
+      realtime={{ io, url: 'https://arvist.example.com' }}
+    >
       <PackStation />
     </ArvistProvider>
   );
@@ -61,6 +74,9 @@ function PackStation() {
         phase={inspection.phase}
         progress={inspection.progress}
         connection={inspection.connection}
+        // `detail` is free text under the phase label — the component has no
+        // notion of a shipment, so nothing shows here unless you pass it.
+        detail={inspection.shipment ? `#${inspection.shipment.id}` : undefined}
       />
       <ExceptionList
         exceptions={exceptions.exceptions}
@@ -252,8 +268,10 @@ to your own storage on receipt.
 
 ## Realtime
 
-`realtime={{ io }}` is the common case. The transport is pluggable, so any
-duplex channel can be adapted:
+`realtime={{ io }}` is the common case. `url` defaults to the client's
+`baseUrl` — set it explicitly whenever the app and the realtime server are on
+different origins. The transport is pluggable, so any duplex channel can be
+adapted:
 
 ```ts
 import { InspectionFeed, type RealtimeTransport } from '@arvist/react/core';
