@@ -90,9 +90,10 @@ describe('sentinel line items', () => {
 });
 
 describe('deriveExceptions', () => {
-  it('derives an overage from a line counted above expected', () => {
+  it('derives an overage from the line item\'s own open issue', () => {
+    const openOverage = issue({ id: 9, issue_type: 'overage', status: 'open', shipment_data_id: 1 });
     const result = deriveExceptions(
-      shipment({ line_items: [line({ expected_quantity: 5, actual_quantity: 8 })] }),
+      shipment({ line_items: [line({ id: 1, expected_quantity: 5, actual_quantity: 8, issue: openOverage })] }),
     );
     expect(result).toHaveLength(1);
     expect(result[0]!.type).toBe('overage');
@@ -100,18 +101,23 @@ describe('deriveExceptions', () => {
     expect(result[0]!.blocksCompletion).toBe(false);
   });
 
-  it('derives a shortage and blocks completion once counting is done', () => {
+  it('derives a blocking shortage from the line item\'s own open issue', () => {
+    const openShortage = issue({ id: 9, issue_type: 'shortage', status: 'open', shipment_data_id: 1 });
     const [ex] = deriveExceptions(
-      shipment({ status: 'review', line_items: [line({ expected_quantity: 10, actual_quantity: 4 })] }),
+      shipment({
+        status: 'review',
+        line_items: [line({ id: 1, expected_quantity: 10, actual_quantity: 4, issue: openShortage })],
+      }),
     );
     expect(ex!.type).toBe('shortage');
     expect(ex!.severity).toBe('blocking');
     expect(ex!.blocksCompletion).toBe(true);
   });
 
-  it('stops a shortage blocking when the shipment is auto-completed upstream', () => {
+  it('stops an open shortage blocking when the shipment is auto-completed upstream', () => {
+    const openShortage = issue({ id: 9, issue_type: 'shortage', status: 'open', shipment_data_id: 1 });
     const [ex] = deriveExceptions(
-      shipment({ status: 'review', line_items: [line({ actual_quantity: 4 })] }),
+      shipment({ line_items: [line({ id: 1, actual_quantity: 4, issue: openShortage })] }),
       { autoCompleted: true },
     );
     expect(ex!.type).toBe('shortage');
@@ -119,22 +125,24 @@ describe('deriveExceptions', () => {
     expect(ex!.severity).toBe('warning');
   });
 
-  it('maps the `wrong` sentinel SKU to a wrong-product exception', () => {
+  it('reports nothing for a `wrong`-bucket count with no issue row behind it', () => {
+    // A count sitting in the sentinel bucket with no matching issue row is a
+    // backend data gap, not something the client invents an exception for.
     const types = typesOf(
       shipment({
         line_items: [line({ sku: 'wrong', expected_quantity: 0, actual_quantity: 2 })],
       }),
     );
-    expect(types).toEqual(['wrong_product']);
+    expect(types).toEqual([]);
   });
 
-  it('maps the `unknown` sentinel SKU to an unidentified-product exception', () => {
+  it('reports nothing for an `unknown`-bucket count with no issue row behind it', () => {
     const types = typesOf(
       shipment({
         line_items: [line({ sku: 'unknown', expected_quantity: 0, actual_quantity: 1 })],
       }),
     );
-    expect(types).toEqual(['unidentified_product']);
+    expect(types).toEqual([]);
   });
 
   it('ignores sentinel rows that were never counted', () => {
@@ -143,13 +151,13 @@ describe('deriveExceptions', () => {
     ).toEqual([]);
   });
 
-  it('excludes sentinel rows from quantity variance', () => {
-    // A `wrong` row with expected 0 must not also read as an overage.
+  it('excludes sentinel rows from quantity variance entirely, issue or not', () => {
+    // Sentinel SKUs are never checked for an overage/shortage issue at all —
+    // `expected_quantity: 0` on a sentinel row is not a real order line.
     const types = typesOf(
       shipment({ line_items: [line({ sku: 'wrong', expected_quantity: 0, actual_quantity: 3 })] }),
     );
-    expect(types).toEqual(['wrong_product']);
-    expect(types).not.toContain('overage');
+    expect(types).toEqual([]);
   });
 
   it('reports a hand-edited count even when the line reconciles', () => {
@@ -159,12 +167,23 @@ describe('deriveExceptions', () => {
     expect(types).toEqual(['manual_count_correction']);
   });
 
-  it('reports both the variance and the correction when an edited line still differs', () => {
+  it('reports the correction but not an overage when an edited line varies with no issue row', () => {
     const types = typesOf(
       shipment({ line_items: [line({ expected_quantity: 10, actual_quantity: 12, is_edited: true })] }),
     );
-    expect(types).toContain('overage');
-    expect(types).toContain('manual_count_correction');
+    expect(types).toEqual(['manual_count_correction']);
+  });
+
+  it('reports both the variance and the correction when an edited line has a real overage issue', () => {
+    const openOverage = issue({ id: 9, issue_type: 'overage', status: 'open', shipment_data_id: 1 });
+    const types = typesOf(
+      shipment({
+        line_items: [
+          line({ id: 1, expected_quantity: 10, actual_quantity: 12, is_edited: true, issue: openOverage }),
+        ],
+      }),
+    );
+    expect(types.sort()).toEqual(['manual_count_correction', 'overage']);
   });
 
   it('maps stored issue rows onto their exception types', () => {
@@ -221,19 +240,15 @@ describe('deriveExceptions', () => {
     expect(ex!.blocksCompletion).toBe(false);
   });
 
-  it('falls back to quantity math when no stored issue exists yet, and offers no resolutions', () => {
-    const [ex] = deriveExceptions(
+  it('reports nothing for a quantity variance with no stored issue yet', () => {
+    // Concretely, this is every ordered line's state right after an
+    // inspection starts and nothing has been counted yet (delta is never 0) —
+    // reporting an exception here, with nothing behind it, is exactly what
+    // the redesign above rules out.
+    const result = deriveExceptions(
       shipment({ line_items: [line({ id: 1, expected_quantity: 5, actual_quantity: 8, issue: null })] }),
     );
-    expect(ex!.type).toBe('overage');
-    expect(ex!.issue).toBeUndefined();
-    expect(ex!.status).toBe('open');
-    // No issue row exists to resolve — offering buttons here would just fail
-    // with "no issue row to resolve" the moment anyone clicked one. This is
-    // also, concretely, every ordered line's state right after an inspection
-    // starts and nothing has been counted yet (delta is never 0), so this
-    // path is hit immediately, not just in some rare timing gap.
-    expect(ex!.resolutions).toEqual([]);
+    expect(result).toEqual([]);
   });
 
   it('reports a canceled wrong-load as a removed unit', () => {
@@ -249,20 +264,22 @@ describe('deriveExceptions', () => {
   });
 
   it('honours the exclude option', () => {
+    const openShortage = issue({ id: 9, issue_type: 'shortage', status: 'open', shipment_data_id: 1 });
     const types = typesOf(
-      shipment({ line_items: [line({ actual_quantity: 4 })] }),
+      shipment({ line_items: [line({ id: 1, actual_quantity: 4, issue: openShortage })] }),
       { exclude: ['shortage'] },
     );
     expect(types).toEqual([]);
   });
 
   it('sorts open before closed, and blocking first', () => {
+    const openShortage = issue({ id: 9, issue_type: 'shortage', status: 'open', shipment_data_id: 2 });
     const result = deriveExceptions(
       withUnit([issue({ issue_type: 'damage', status: 'resolved' })], 'pallet', {
         status: 'review',
         line_items: [
-          line({ sku: 'A', expected_quantity: 5, actual_quantity: 7 }),
-          line({ sku: 'B', expected_quantity: 5, actual_quantity: 2 }),
+          line({ id: 1, sku: 'A', expected_quantity: 5, actual_quantity: 7 }),
+          line({ id: 2, sku: 'B', expected_quantity: 5, actual_quantity: 2, issue: openShortage }),
         ],
       }),
     );
@@ -345,44 +362,39 @@ describe('mergeRealtimeIssues', () => {
   });
 });
 
-describe('provisional shortages', () => {
-  // Counts climb from zero as units complete, so mid-inspection every uncounted
-  // line looks short. Those are not exceptions yet.
-  const shortLine = [line({ expected_quantity: 10, actual_quantity: 0 })];
+describe('shortage only ever comes from a real issue row', () => {
+  // The API only creates a `shortage` row when the operator actually tries to
+  // complete and comes up short (`detectShortages`, called from
+  // `finishShipmentProcessing`/`submitShipmentProcessing`) — never
+  // continuously during counting. A line reading short mid-inspection is
+  // normal, expected, and not an exception at all until that happens.
+  const shortLine = [line({ id: 1, expected_quantity: 10, actual_quantity: 0 })];
 
-  it('reports a mid-inspection shortage as provisional and non-blocking, with no resolutions', () => {
-    // This is what shows up the instant an inspection starts and nothing has
-    // been counted yet — every ordered line reads as short. It's purely a
-    // client-side quantity-math artifact at this point (no `detectShortages`
-    // row exists), so there's nothing real to resolve against yet.
-    const [ex] = deriveExceptions(shipment({ status: 'in_progress', line_items: shortLine }));
-    expect(ex!.type).toBe('shortage');
-    expect(ex!.severity).toBe('info');
-    expect(ex!.blocksCompletion).toBe(false);
-    expect(ex!.description).toMatch(/still counting/);
-    expect(ex!.resolutions).toEqual([]);
+  it('reports nothing for an uncounted line mid-inspection, with no issue row yet', () => {
+    expect(
+      deriveExceptions(shipment({ status: 'in_progress', line_items: shortLine })),
+    ).toEqual([]);
   });
 
-  it('promotes it to blocking once the shipment reaches review', () => {
-    const [ex] = deriveExceptions(shipment({ status: 'review', line_items: shortLine }));
+  it('reports nothing even once the shipment reaches review, absent a real issue row', () => {
+    // Reaching `review` doesn't conjure a shortage on its own — only the
+    // server's own completion-attempt check does.
+    expect(
+      deriveExceptions(shipment({ status: 'review', line_items: shortLine })),
+    ).toEqual([]);
+  });
+
+  it('blocks completion once a real, open shortage issue exists', () => {
+    const openShortage = issue({ id: 9, issue_type: 'shortage', status: 'open', shipment_data_id: 1 });
+    const [ex] = deriveExceptions(
+      shipment({
+        status: 'review',
+        line_items: [line({ id: 1, expected_quantity: 10, actual_quantity: 0, issue: openShortage })],
+      }),
+    );
+    expect(ex!.type).toBe('shortage');
     expect(ex!.severity).toBe('blocking');
     expect(ex!.blocksCompletion).toBe(true);
-  });
-
-  it('honours an explicit countsFinal over the status', () => {
-    const [ex] = deriveExceptions(
-      shipment({ status: 'in_progress', line_items: shortLine }),
-      { countsFinal: true },
-    );
-    expect(ex!.blocksCompletion).toBe(true);
-  });
-
-  it('treats an overage as real immediately — counting more than ordered is not provisional', () => {
-    const [ex] = deriveExceptions(
-      shipment({ status: 'in_progress', line_items: [line({ expected_quantity: 2, actual_quantity: 5 })] }),
-    );
-    expect(ex!.type).toBe('overage');
-    expect(ex!.severity).toBe('warning');
   });
 });
 
@@ -407,22 +419,20 @@ describe('unidentified product is reported once', () => {
     expect(result[0]!.resolutions.length).toBeGreaterThan(0);
   });
 
-  it('still reports the sentinel row on its own when no issue row exists, with no resolutions', () => {
+  it('reports nothing for the sentinel row on its own when no issue row exists', () => {
+    // Same reasoning as overage/shortage: a count sitting in the `unknown`
+    // bucket with no backing issue row is a backend data gap, not something
+    // the client papers over by inventing an exception.
     const result = deriveExceptions(shipment({ line_items: [unknownLine] }));
-    expect(result).toHaveLength(1);
-    expect(result[0]!.type).toBe('unidentified_product');
-    expect(result[0]!.issue).toBeUndefined();
-    // No issue row backs a sentinel-only row — same "don't offer a button
-    // guaranteed to fail" reasoning as the overage/shortage case.
-    expect(result[0]!.resolutions).toEqual([]);
+    expect(result).toEqual([]);
   });
 
-  it('does not swallow a `wrong` row alongside an unidentified issue', () => {
+  it('does not report an unrelated `wrong` row with no issue row, and does not merge it in either', () => {
     const types = typesOf(
       withUnit([issue({ issue_type: 'unidentified_product' })], 'product', {
         line_items: [unknownLine, line({ sku: 'wrong', expected_quantity: 0, actual_quantity: 1 })],
       }),
     );
-    expect(types.sort()).toEqual(['unidentified_product', 'wrong_product']);
+    expect(types).toEqual(['unidentified_product']);
   });
 });

@@ -7,7 +7,16 @@ import {
   reconcile,
   upcCoverage,
 } from '../core/reconcile';
-import type { LineItem, Shipment } from '../core/types';
+import type { LineItem, Shipment, ShipmentIssue } from '../core/types';
+
+const issue = (over: Partial<ShipmentIssue> = {}): ShipmentIssue => ({
+  id: 9,
+  issue_type: 'shortage',
+  status: 'open',
+  created_at: '2026-08-18T10:00:00Z',
+  updated_at: '2026-08-18T10:00:00Z',
+  ...over,
+});
 
 const line = (over: Partial<LineItem> = {}): LineItem => ({
   name: 'Widget',
@@ -118,30 +127,41 @@ describe('reconcile', () => {
 });
 
 describe('checkCompletion', () => {
-  it('blocks on an unresolved shortage', () => {
-    const result = checkCompletion(shipment([line({ actual_quantity: 3 })]));
+  it('blocks on an open, real shortage issue', () => {
+    const openShortage = issue({ issue_type: 'shortage', shipment_data_id: 1 });
+    const result = checkCompletion(shipment([line({ id: 1, actual_quantity: 3, issue: openShortage })]));
     expect(result.canComplete).toBe(false);
     expect(result.blockers).toHaveLength(1);
     expect(result.reason).toMatch(/must be resolved/);
   });
 
+  it('does not block on quantity math alone — no shortage exists until the API creates one', () => {
+    const result = checkCompletion(shipment([line({ actual_quantity: 3 })]));
+    expect(result.canComplete).toBe(true);
+    expect(result.blockers).toEqual([]);
+  });
+
   it('allows completion when the shipment is auto-completed upstream', () => {
-    const result = checkCompletion(shipment([line({ actual_quantity: 3 })]), {
-      autoCompleted: true,
-    });
+    const openShortage = issue({ issue_type: 'shortage', shipment_data_id: 1 });
+    const result = checkCompletion(
+      shipment([line({ id: 1, actual_quantity: 3, issue: openShortage })]),
+      { autoCompleted: true },
+    );
     expect(result.canComplete).toBe(true);
     expect(result.warnings).toHaveLength(1);
   });
 
-  it('treats an overage as a warning, not a blocker', () => {
-    const result = checkCompletion(shipment([line({ actual_quantity: 12 })]));
+  it('treats an overage issue as a warning, not a blocker', () => {
+    const openOverage = issue({ issue_type: 'overage', shipment_data_id: 1 });
+    const result = checkCompletion(shipment([line({ id: 1, actual_quantity: 12, issue: openOverage })]));
     expect(result.canComplete).toBe(true);
     expect(result.warnings.map((w) => w.type)).toEqual(['overage']);
   });
 
-  it('blocks an in-progress shortage, because completing asserts counting is done', () => {
+  it('blocks on an open shortage issue regardless of shipment status', () => {
+    const openShortage = issue({ issue_type: 'shortage', shipment_data_id: 1 });
     const result = checkCompletion({
-      line_items: [line({ actual_quantity: 0 })],
+      line_items: [line({ id: 1, actual_quantity: 0, issue: openShortage })],
       status: 'in_progress',
     });
     expect(result.canComplete).toBe(false);

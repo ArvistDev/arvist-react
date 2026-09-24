@@ -167,19 +167,21 @@ export interface CompletionCheck {
 /**
  * Whether an inspection can be closed from the UI.
  *
- * An unresolved shortage holds the inspection open. Pass
- * `autoCompleted: true` when an upstream system closes the shipment out of band
- * — a box-closure barcode scan, for example — in which case the shortage is
- * recorded but no longer blocking.
+ * An open, unresolved `shortage` issue holds the inspection open — but that
+ * row only exists once the operator has actually tried to complete and come
+ * up short (the API's own `detectShortages` check), so this reads as
+ * unblocked right up until that first attempt; the block, when it happens,
+ * comes from the server rejecting `finish`/`submit`, not from a client-side
+ * guess made from quantity math. Pass `autoCompleted: true` when an upstream
+ * system closes the shipment out of band — a box-closure barcode scan, for
+ * example — in which case an open shortage is still recorded but no longer
+ * blocking.
  */
 export function checkCompletion(
   shipment: Pick<Shipment, 'line_items' | 'units' | 'status'> | undefined,
   options: DeriveOptions = {},
 ): CompletionCheck {
-  // Asking whether an inspection can be completed presumes counting is done,
-  // so shortages are evaluated as real here even while the shipment still
-  // reads as in progress.
-  const open = deriveExceptions(shipment, { countsFinal: true, ...options }).filter(isExceptionOpen);
+  const open = deriveExceptions(shipment, options).filter(isExceptionOpen);
   const blockers = open.filter((e) => e.blocksCompletion);
   const warnings = open.filter((e) => !e.blocksCompletion);
 
