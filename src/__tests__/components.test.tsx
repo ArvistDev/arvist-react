@@ -61,7 +61,7 @@ describe('cn', () => {
 describe('ExceptionCard', () => {
   it('renders the title, description and blocking notice', () => {
     render(<ExceptionCard exception={exception()} />);
-    expect(screen.getByText('Shortage')).toBeTruthy();
+    expect(screen.getByText('Shortage Detected')).toBeTruthy();
     expect(screen.getByText(/expected 4, counted 2/)).toBeTruthy();
     expect(screen.getByText(/Blocks completion/)).toBeTruthy();
   });
@@ -78,7 +78,7 @@ describe('ExceptionCard', () => {
     const onResolve = vi.fn();
     render(<ExceptionCard exception={exception()} onResolve={onResolve} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Located and re-counted/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Missing Product Added/ }));
     await waitFor(() => expect(onResolve).toHaveBeenCalled());
     expect(onResolve.mock.calls[0]![0].action).toBe('locate_stock');
   });
@@ -106,7 +106,7 @@ describe('ExceptionCard', () => {
     const onResolve = vi.fn().mockRejectedValue(new Error('Issue already closed'));
     render(<ExceptionCard exception={exception()} onResolve={onResolve} />);
 
-    fireEvent.click(screen.getByRole('button', { name: /Located and re-counted/ }));
+    fireEvent.click(screen.getByRole('button', { name: /Missing Product Added/ }));
     await waitFor(() => expect(screen.getByRole('alert').textContent).toBe('Issue already closed'));
   });
 
@@ -141,7 +141,7 @@ describe('ExceptionCard', () => {
     expect(root.className).not.toContain('arvist-exception');
     expect(container.querySelector('.mine')).toBeTruthy();
     // Structure survives.
-    expect(screen.getByText('Shortage')).toBeTruthy();
+    expect(screen.getByText('Shortage Detected')).toBeTruthy();
   });
 
   it('appends caller classes alongside the defaults', () => {
@@ -199,7 +199,7 @@ describe('ExceptionList', () => {
     const onResolve = vi.fn();
     render(<ExceptionList exceptions={[warning]} onResolve={onResolve} />);
 
-    fireEvent.click(screen.getByRole('button', { name: 'Removed from shipment' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Remove Product' }));
     await waitFor(() => expect(onResolve).toHaveBeenCalled());
     expect(onResolve.mock.calls[0]![0].key).toBe('b');
     expect(onResolve.mock.calls[0]![1].action).toBe('remove_item');
@@ -212,7 +212,7 @@ describe('ExceptionList', () => {
         renderException={(p) => <div data-testid="custom">{p.exception.title}</div>}
       />,
     );
-    expect(screen.getByTestId('custom').textContent).toBe('Shortage');
+    expect(screen.getByTestId('custom').textContent).toBe('Shortage Detected');
   });
 });
 

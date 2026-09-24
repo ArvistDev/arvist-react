@@ -5,9 +5,22 @@
  * `wrong_load`, `no_identifiers`, `wrong_product`, `overage`, `shortage`),
  * in three different shapes — session-scoped singleton, per-instance, and
  * session-less per-line-item — but an operator screen has to cover nine
- * distinct situations regardless of shape. The rest are implied by the line
- * items: a hand-edited count, or a sentinel SKU standing in for an off-order
- * item.
+ * distinct situations regardless of shape. `manual_count_correction` is the
+ * one exception with no issue row at all — a hand-edited count is reported
+ * directly off the line item.
+ *
+ * Every other exception type is reported *only* when a real issue row backs
+ * it, deliberately, even when the raw line-item numbers alone would already
+ * tell the same story (a line short of `expected_quantity`, a count sitting
+ * in the `unknown`/`wrong` sentinel bucket). The issues table is the system
+ * of record for audit and KPI tracking — an exception the client invented
+ * from quantity math, with nothing behind it to resolve, would be invisible
+ * to that tracking even while it sits in front of an operator. Concretely
+ * this means a `shortage` never appears while counting is still in progress:
+ * the API only creates that row when the operator actually tries to
+ * complete the inspection and comes up short (`detectShortages`, called
+ * from `finishShipmentProcessing`/`submitShipmentProcessing`) — never
+ * continuously during counting.
  *
  * Reimplementing that mapping is the single most error-prone part of an
  * integration, so it lives here. Feed {@link deriveExceptions} whatever you
@@ -175,33 +188,59 @@ export interface PartialExceptionCopy {
   actions?: Partial<Record<ResolutionAction, string>>;
 }
 
+/**
+ * Matches the real first-party frontend's operator-facing copy
+ * (`arvist/frontend/userdashboard/src/locales/translations/en.ts`) for the
+ * four exception types that resolve through the keyword-action endpoint
+ * (`unidentified_product`/`wrong_product`/`overage`/`shortage`), so an
+ * operator sees identical wording whether they use the in-house dashboard or
+ * an integrator's app built on this SDK.
+ *
+ * Two known gaps, both on the real frontend's side, not fixed here:
+ * - `remove_item` covers three real, *differently worded* buttons ("Remove
+ *   Product" for unidentified_product/wrong_product, "Extra product removed"
+ *   for overage) — this copy model is one label per action, not per
+ *   (type, action) pair, so it can't carry all three. "Remove Product" is
+ *   used since it covers two of the three.
+ * - `reassign_product` (overage's `reassign`) has no dedicated copy in the
+ *   real frontend at all — it reuses `unidentified_product`'s "Assign
+ *   Product" flow and modal verbatim, which reads as if the operator is
+ *   identifying an unidentified item rather than reassigning an overage.
+ *   The label here is written fresh rather than copying that mismatch.
+ *
+ * `damage`/`wrong_load`/`missing_identifiers` resolve through the older,
+ * status-based endpoint (not the keyword one) and have no equivalent
+ * per-action copy to match — their real UI is a single "Resolve" button
+ * (damage) or a differently-shaped three-option flow (wrong_load) — so their
+ * copy here is unchanged from this SDK's own original wording.
+ */
 export const DEFAULT_EXCEPTION_COPY: ExceptionCopy = {
   titles: {
-    unidentified_product: 'Unidentified product',
-    wrong_product: 'Wrong product',
-    overage: 'Overage',
-    shortage: 'Shortage',
+    unidentified_product: 'Unidentified Product Detected',
+    wrong_product: 'Wrong Product Detected',
+    overage: 'Overage Detected',
+    shortage: 'Shortage Detected',
     manual_count_correction: 'Manual count correction',
-    wrong_load: 'Wrong load',
-    missing_identifiers: 'Missing identifiers',
+    wrong_load: 'Wrong Load Detected',
+    missing_identifiers: 'Pallet Identifier Not Detected',
     unit_removed: 'Unit removed from inspection',
-    damage: 'Damage detected',
+    damage: 'Damages Detected',
   },
   actions: {
-    identify_product: 'Identify product',
-    remove_item: 'Removed from shipment',
-    accept_substitute: 'Accept as substitute',
+    identify_product: 'Assign Product',
+    remove_item: 'Remove Product',
+    accept_substitute: 'Keep in Order',
     accept_count: 'Accept count',
-    correct_count: 'Correct count',
-    locate_stock: 'Located and re-counted',
+    correct_count: 'Wrong Counting',
+    locate_stock: 'Missing Product Added',
     redirect_load: 'Redirected to correct load',
     cancel_unit: 'Remove unit from inspection',
     submit_identifiers: 'Enter identifiers',
     acknowledge: 'Acknowledge',
-    flag_false_positive: 'Not an issue',
+    flag_false_positive: "That's Not a Product",
     mark_unresolved: 'Cannot resolve',
-    correct_product: 'Correct the product',
-    reassign_product: 'Reassign to correct product',
+    correct_product: 'It Is a Correct Product',
+    reassign_product: 'Reassign to a Different Product',
   },
 };
 
@@ -286,24 +325,12 @@ export interface DeriveOptions {
   copy?: ExceptionCopy;
   /**
    * When the shipment is auto-completed by an upstream system (a box-closure
-   * barcode scan, for example), a shortage no longer holds the inspection open.
-   * Defaults to `false`, which is the conservative reading.
+   * barcode scan, for example), an open `shortage` issue no longer holds the
+   * inspection open — completion already happened out of band. The issue row
+   * itself still gets reported (for audit), just not as a blocker. Defaults
+   * to `false`, which is the conservative reading.
    */
   autoCompleted?: boolean;
-  /**
-   * Whether counting has finished.
-   *
-   * This matters for shortages specifically. Counts climb from zero as units
-   * complete, so mid-inspection every uncounted line looks short — reporting
-   * those as real exceptions would bury the operator in noise before a single
-   * unit has been scanned. While counting is in flight a shortage is reported
-   * as provisional: visible, but not blocking and not alarming.
-   *
-   * Defaults to whether the shipment has reached `review` or `completed`.
-   * {@link checkCompletion} overrides it to `true`, because asking to complete
-   * an inspection is itself the assertion that counting is done.
-   */
-  countsFinal?: boolean;
   /**
    * Unit type of the inspection. Pallet-only exceptions are dropped for
    * `product` inspections even if a stale row exists. Defaults to inferring
@@ -383,9 +410,6 @@ export function deriveExceptions(
   const copy = options.copy ?? DEFAULT_EXCEPTION_COPY;
   const unitType = options.unitType ?? inferUnitType(shipment);
   const exclude = new Set(options.exclude ?? []);
-  const countsFinal =
-    options.countsFinal ?? (shipment.status === 'review' || shipment.status === 'completed');
-  const shortageBlocks = countsFinal && !options.autoCompleted;
   const out: NormalizedException[] = [];
 
   const push = (e: NormalizedException) => {
@@ -402,7 +426,6 @@ export function deriveExceptions(
   const unknownRow = (shipment.line_items ?? []).find(
     (i) => i.sku?.toLowerCase().trim() === 'unknown' && (i.actual_quantity ?? 0) > 0,
   );
-  let unknownRowConsumed = false;
 
   // 1. Stored issue rows -----------------------------------------------------
   for (const issue of collectIssues(shipment)) {
@@ -417,14 +440,13 @@ export function deriveExceptions(
       type === 'wrong_load' && issue.status === 'canceled' ? 'unit_removed' : type;
 
     const mergesUnknownRow = resolvedType === 'unidentified_product' && unknownRow !== undefined;
-    if (mergesUnknownRow) unknownRowConsumed = true;
     const quantity = mergesUnknownRow ? (unknownRow!.actual_quantity ?? 0) : undefined;
 
     push({
       key: `issue:${issue.id}`,
       type: resolvedType,
       status: issue.status,
-      severity: severityFor(resolvedType, issue.status, shortageBlocks),
+      severity: severityFor(resolvedType, issue.status),
       title: copy.titles[resolvedType],
       description: quantity
         ? `${quantity} item(s) could not be identified.`
@@ -440,65 +462,38 @@ export function deriveExceptions(
     });
   }
 
-  // 2. Off-order sentinel line items ----------------------------------------
-  for (const item of shipment.line_items ?? []) {
-    if (!isSentinelLineItem(item)) continue;
-    if (item.actual_quantity <= 0) continue;
-    if (item === unknownRow && unknownRowConsumed) continue;
-
-    const sku = item.sku.toLowerCase().trim();
-    const type: ExceptionType = sku === 'wrong' ? 'wrong_product' : 'unidentified_product';
-    push({
-      key: lineItemKey(item, type),
-      type,
-      status: 'open',
-      severity: 'warning',
-      title: copy.titles[type],
-      description:
-        type === 'wrong_product'
-          ? `${item.actual_quantity} item(s) not on this order were counted.`
-          : `${item.actual_quantity} item(s) could not be identified.`,
-      resolutions: resolutionsFor(type, copy),
-      blocksCompletion: false,
-      lineItem: item,
-      palletOnly: false,
-      quantities: { expected: 0, actual: item.actual_quantity, delta: item.actual_quantity },
-    });
-  }
-
-  // 3. Quantity variance on real order lines --------------------------------
+  // 2. Overage/shortage issue rows -------------------------------------------
+  // Session-less, one open row per line item (`line_items[].issue`). Reported
+  // only when that row actually exists — see the module comment for why a
+  // line simply reading over/under `expected_quantity` is never enough on its
+  // own. `unidentified_product`/`wrong_product` sentinel counts (SKU `unknown`/
+  // `wrong`) get the identical treatment: their count is folded into the
+  // issue-backed exception above when one exists (see `unknownRow`) and
+  // otherwise reported nowhere here — a sentinel-bucket count with no issue
+  // row behind it is a backend data gap, not something for the client to
+  // invent an exception for.
   for (const item of orderedLineItems(shipment.line_items)) {
     const expected = item.expected_quantity ?? 0;
     const actual = item.actual_quantity ?? 0;
     const delta = actual - expected;
+    const issueType = item.issue?.issue_type;
 
-    if (delta !== 0) {
-      const type: ExceptionType = delta > 0 ? 'overage' : 'shortage';
-      const provisional = type === 'shortage' && !countsFinal;
-      const blocks = type === 'shortage' && shortageBlocks;
-
-      // `overage`/`shortage` are real stored rows on `line_items[].issue` —
-      // session-less, one open row per line item. When one is present and
-      // matches the direction of the variance, the exception is issue-backed
-      // (resolvable via the issue actions); otherwise it is still reported
-      // from the quantity math alone, e.g. before the server has created the
-      // row yet, with no resolution beyond acknowledging it in the UI.
-      const storedIssue =
-        item.issue && item.issue.issue_type === type ? item.issue : undefined;
-      const open = storedIssue ? OPEN_STATUSES.includes(storedIssue.status) : true;
+    if (item.issue && (issueType === 'overage' || issueType === 'shortage')) {
+      const storedIssue = item.issue;
+      const type = issueType;
+      const open = OPEN_STATUSES.includes(storedIssue.status);
+      const blocks = type === 'shortage' && open && !options.autoCompleted;
 
       push({
-        key: storedIssue ? `issue:${storedIssue.id}` : lineItemKey(item, type),
+        key: `issue:${storedIssue.id}`,
         type,
-        status: storedIssue ? storedIssue.status : 'open',
-        severity: !open ? 'info' : blocks ? 'blocking' : provisional ? 'info' : 'warning',
+        status: storedIssue.status,
+        severity: !open ? 'info' : blocks ? 'blocking' : 'warning',
         title: copy.titles[type],
-        description: provisional
-          ? `${item.name || item.sku}: expected ${expected}, ${actual} counted so far — still counting.`
-          : `${item.name || item.sku}: expected ${expected}, counted ${actual} ` +
-            `(${delta > 0 ? '+' : ''}${delta}).`,
+        description: `${item.name || item.sku}: expected ${expected}, counted ${actual} ` +
+          `(${delta > 0 ? '+' : ''}${delta}).`,
         resolutions: resolutionsFor(type, copy),
-        blocksCompletion: open && blocks,
+        blocksCompletion: blocks,
         issue: storedIssue,
         lineItem: item,
         palletOnly: false,
@@ -528,13 +523,8 @@ export function deriveExceptions(
   return out.sort(bySeverityThenType);
 }
 
-function severityFor(
-  type: ExceptionType,
-  status: IssueStatus,
-  shortageBlocks: boolean,
-): ExceptionSeverity {
+function severityFor(type: ExceptionType, status: IssueStatus): ExceptionSeverity {
   if (!OPEN_STATUSES.includes(status)) return 'info';
-  if (type === 'shortage' && shortageBlocks) return 'blocking';
   if (type === 'manual_count_correction' || type === 'unit_removed') return 'info';
   return 'warning';
 }

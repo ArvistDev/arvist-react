@@ -105,38 +105,57 @@ with resolution paths attached:
 
 | Exception | Where it comes from |
 |---|---|
-| Unidentified product | `unidentified_product` row(s), and/or an `unknown` sentinel line |
-| Wrong product | `wrong_product` row(s), and/or a `wrong` sentinel line |
-| Overage | `overage` row on the line item, and/or `actual_quantity` > `expected_quantity` |
-| Shortage | `shortage` row on the line item, and/or `actual_quantity` < `expected_quantity` |
+| Unidentified product | `unidentified_product` row(s) only |
+| Wrong product | `wrong_product` row(s) only |
+| Overage | `overage` row on the line item only |
+| Shortage | `shortage` row on the line item only |
 | Manual count correction | `is_edited` on a line |
 | Wrong load *(pallet only)* | `wrong_load` row |
 | Missing identifiers *(pallet only)* | `no_identifiers` row |
 | Unit removed | `wrong_load` row resolved as `canceled` |
 | Damage | `damage` row |
 
-Three things this gets right that are easy to get wrong by hand. An
+Four things this gets right that are easy to get wrong by hand. An
 unidentified item is recorded **twice** — an issue row *and* an `unknown`
 sentinel line carrying the count — and they are one problem, so the count is
 folded in and it is reported once. A `wrong_load` closed by cancelling the unit
 is reported as **Unit removed**, because the unit leaving the inspection is
-what downstream systems need to see. And a per-instance issue type keeps every
+what downstream systems need to see. A per-instance issue type keeps every
 detected instance as its own exception rather than collapsing same-type rows
 into one — resolving one `wrong_product` finding never silently closes another.
+And every exception type traces back to a real row in the issues table — none
+of them are derived from quantity math or a sentinel SKU alone, even when the
+raw numbers would already tell the same story, because the issues table is the
+system of record for audit and KPI tracking. An exception invented client-side
+would be invisible to that tracking while it sat in front of an operator.
 
-### Shortages are provisional until counting is done
+### A shortage only ever comes from the API, never from quantity math
 
-Counts climb from zero as units complete, so mid-inspection every uncounted
-line looks short. Reporting those as real exceptions buries the operator before
-a single item is scanned.
+The API creates a `shortage` row exactly once: when the operator tries to
+complete the inspection and comes up short (`detectShortages`, run from
+`finishInspection`/`submitInspection` — never continuously during counting).
+Before that point every ordered line reads as short by definition (counts
+climb from zero as units complete), so deriving a "shortage" from
+`actual_quantity < expected_quantity` client-side would mean reporting one on
+every single line the instant an inspection starts. `deriveExceptions()`
+reports nothing for a line until that real row exists.
 
-A shortage is therefore `info` and non-blocking while the shipment is still
-`in_progress`, and becomes `blocking` once it reaches `review`. `checkCompletion()`
-always evaluates it as real — asking to complete an inspection *is* the
-assertion that counting is done.
+Concretely, `finish()` can come back rejected rather than succeeding:
 
-Set `autoCompleted` on the provider when an upstream system closes shipments out
-of band (a box-closure scan, say). A shortage is then recorded but never blocks.
+```tsx
+try {
+  await inspection.finish();
+} catch (err) {
+  // err.code === 'completion_blocked' — the API found real, open shortages.
+  // inspection.shipment has already been refreshed, so the exceptions list
+  // now shows them as real, resolvable rows.
+}
+```
+
+Resolve those (or any other exception) and call `finish()` again. Set
+`autoCompleted` on the provider when an upstream system closes shipments out of
+band (a box-closure scan, say) — an open shortage is still recorded, but
+`blocksCompletion` reads `false` instead of `true`.
 
 ### Count corrections are staged, not written
 

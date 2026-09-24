@@ -565,7 +565,17 @@ function toActionResult(body: unknown): ActionResult {
   if (isPlainObject(body)) {
     const message = typeof body['message'] === 'string' ? body['message'] : 'OK';
     const shipment = pickShipment(body);
-    return shipment ? { message, shipment, raw: body } : { message, raw: body };
+    const blocked_by = body['blocked_by'] === 'shortage' ? ('shortage' as const) : undefined;
+    const shortage_issues = Array.isArray(body['shortage_issues'])
+      ? (body['shortage_issues'] as ShipmentIssue[])
+      : undefined;
+    return {
+      message,
+      ...(shipment ? { shipment } : {}),
+      ...(blocked_by ? { blocked_by } : {}),
+      ...(shortage_issues ? { shortage_issues } : {}),
+      raw: body,
+    };
   }
   return { message: 'OK', raw: body };
 }

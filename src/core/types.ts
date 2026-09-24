@@ -286,6 +286,16 @@ export interface ShipmentDetail extends Shipment {
 export interface ActionResult {
   message: string;
   shipment?: Shipment;
+  /**
+   * Set when `finishInspection` was rejected because open shortages exist.
+   * The API runs its shortage check there (`detectShortages`) rather than
+   * continuously during counting, so this is the point those issue rows
+   * actually get created — `shortage_issues` reflects the real, freshly
+   * created rows, not a client-side guess.
+   */
+  blocked_by?: 'shortage';
+  /** The shortage issues that blocked completion, when `blocked_by` is set. */
+  shortage_issues?: ShipmentIssue[];
   /** The unflattened body, for logging or an endpoint the SDK does not model. */
   raw?: unknown;
 }

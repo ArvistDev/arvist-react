@@ -116,6 +116,76 @@ describe('useInspection: global status topic scoping', () => {
   });
 });
 
+describe('useInspection: finish() blocked by a real shortage', () => {
+  it('surfaces blocked_by, refreshes so the real issue row shows up, and throws', async () => {
+    const transport = fakeTransport();
+    const shortageIssue = {
+      id: 9,
+      issue_type: 'shortage',
+      status: 'open',
+      shipment_data_id: 1,
+      created_at: '',
+      updated_at: '',
+    };
+    // The API's own response shape when `detectShortages` finds open
+    // shortages: a 200, not an error, with `blocked_by`/`shortage_issues` and
+    // no `shipment` — the finish never actually went through.
+    const blockedResponse = {
+      message: 'Shipment has unresolved shortages — add the missing item(s) or resolve, then finish again',
+      blocked_by: 'shortage',
+      shortage_issues: [shortageIssue],
+    };
+    const shipmentBeforeFinish = minimalShipment(5, {
+      line_items: [
+        { id: 1, name: 'Widget', sku: 'SKU-1', product_id: 'P1', expected_quantity: 10, actual_quantity: 4 },
+      ],
+    });
+    const shipmentAfterRefresh = minimalShipment(5, {
+      line_items: [
+        { id: 1, name: 'Widget', sku: 'SKU-1', product_id: 'P1', expected_quantity: 10, actual_quantity: 4, issue: shortageIssue },
+      ],
+    });
+
+    let shipmentFetchCount = 0;
+    const fetchImpl = async (url: RequestInfo | URL) => {
+      const href = String(url);
+      if (href.includes('/shipment/finished')) return jsonResponse(blockedResponse);
+      if (href.includes('/shipment/5')) {
+        shipmentFetchCount += 1;
+        // First fetch is the initial adopt-by-shipmentId call, before the
+        // real issue row exists; the second is the post-block refresh, after
+        // `detectShortages` has created it server-side.
+        return jsonResponse(shipmentFetchCount === 1 ? shipmentBeforeFinish : shipmentAfterRefresh);
+      }
+      return jsonResponse({});
+    };
+
+    const { result } = renderHook(() => useInspection({ shipmentId: 5 }), {
+      wrapper: wrapper(transport, fetchImpl as never),
+    });
+
+    await waitFor(() => expect(result.current.shipment?.id).toBe(5));
+
+    let caught: unknown;
+    await act(async () => {
+      try {
+        await result.current.finish();
+      } catch (err) {
+        caught = err;
+      }
+    });
+
+    expect(caught).toMatchObject({ code: 'completion_blocked' });
+    await waitFor(() => expect(result.current.error?.code).toBe('completion_blocked'));
+    await waitFor(() =>
+      expect(result.current.shipment?.line_items[0]?.issue?.id).toBe(9),
+    );
+    // The finish call itself never returned a shipment, so `adopt()` never ran
+    // for it — only the follow-up refresh should have updated `shipment`.
+    expect(result.current.phase).not.toBe('completed');
+  });
+});
+
 describe('useInspection: adopting a shipment via the status-triggered station lookup', () => {
   // `started` is only ever emitted for an M2M-initiated start — a
   // dashboard/user-authenticated one never sends it (see

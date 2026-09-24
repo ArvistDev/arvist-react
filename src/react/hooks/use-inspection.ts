@@ -89,6 +89,15 @@ export interface UseInspectionResult {
   clearCorrections: () => void;
 
   start: (input: StartInspectionInput) => Promise<Shipment>;
+  /**
+   * Marks an inspection finished — no further units are expected.
+   *
+   * Throws an `ArvistError` with code `completion_blocked` if the API finds
+   * open shortages at this exact moment (`detectShortages`, its own real
+   * check — not something predictable client-side beforehand). `shipment` is
+   * refreshed before the throw, so those now-real issue rows already show up
+   * as resolvable exceptions by the time the caller catches it.
+   */
   finish: () => Promise<void>;
   submit: () => Promise<void>;
   cancel: () => Promise<void>;
@@ -390,8 +399,24 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
   }, []);
 
   const finish = React.useCallback(async () => {
-    adopt(await act(() => client.finishInspection(requireShipment())));
-  }, [act, adopt, client, requireShipment]);
+    const result = await act(() => client.finishInspection(requireShipment()));
+    if (result.blocked_by === 'shortage') {
+      // The API's shortage check (`detectShortages`) runs exactly here, at the
+      // finish attempt — this is the moment those issue rows actually get
+      // created, not something a client-side quantity check could have known
+      // in advance. Refresh so they land in `shipment.line_items[].issue` and
+      // show up as real, resolvable exceptions instead of just this message.
+      await refresh();
+      const blocked = new ArvistError({
+        code: 'completion_blocked',
+        message: result.message,
+        detail: result.shortage_issues,
+      });
+      setError(blocked);
+      throw blocked;
+    }
+    adopt(result);
+  }, [act, adopt, client, refresh, requireShipment]);
 
   const stageCorrection = React.useCallback((lineItem: LineItem, quantity: number) => {
     if (lineItem.id == null) {
