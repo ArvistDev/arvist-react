@@ -119,7 +119,7 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
             connection={inspection.connection}
             detail={
               inspection.shipment
-                ? `${inspection.shipment.order_numbers.join(', ')} · ${inspection.shipment.shipment_key}`
+                ? `#${inspection.shipment.id} · ${inspection.shipment.order_numbers.join(', ')} · ${inspection.shipment.shipment_key}`
                 : 'Scan a tote to begin'
             }
           />
