@@ -200,10 +200,20 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
     if (id == null) return;
     try {
       const fresh = await client.getShipment(id);
+      // Re-check after the await: `refresh` is triggered from several places
+      // (the unit-completed/completed event handler, `submit`, `finish`) and
+      // is a real network round trip. If the tracked shipment changed while
+      // this was in flight — stop this one, immediately start a different
+      // one, a completely normal fast-testing sequence — applying this
+      // response unconditionally would silently overwrite the new shipment's
+      // state with the old one's, issues and all. Without this guard, a slow
+      // stale response for shipment A can land after shipment B is already
+      // bound and make B's screen show A's exceptions.
+      if (shipmentIdRef.current !== id) return;
       setShipment(fresh);
       setPhase(phaseFromStatus(fresh.status));
     } catch (err) {
-      setError(toArvistError(err));
+      if (shipmentIdRef.current === id) setError(toArvistError(err));
     }
   }, [client]);
 
@@ -235,6 +245,12 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
       // this) may have already bound a shipment while this was in flight.
       if (!match || shipmentIdRef.current != null) return;
       const fresh = await client.getShipment(match.id);
+      // And again after this second await, for the same reason — a shipment
+      // may have been bound (by `started`, or another concurrent call to this
+      // function) while this fetch was in flight. Skipping this check would
+      // let a stale lookup for one station's earlier shipment overwrite
+      // whatever's actually bound now.
+      if (shipmentIdRef.current != null) return;
       setShipment(fresh);
       setPhase(phaseFromStatus(fresh.status));
     } catch {
