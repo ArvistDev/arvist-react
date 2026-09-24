@@ -458,7 +458,10 @@ export function deriveExceptions(
         type === 'wrong_product'
           ? `${item.actual_quantity} item(s) not on this order were counted.`
           : `${item.actual_quantity} item(s) could not be identified.`,
-      resolutions: resolutionsFor(type, copy),
+      // No issue row backs a sentinel-only row (see `resolve()`'s per-type
+      // action map) — same reasoning as the overage/shortage case below:
+      // empty, not a set of buttons guaranteed to fail.
+      resolutions: [],
       blocksCompletion: false,
       lineItem: item,
       palletOnly: false,
@@ -482,7 +485,12 @@ export function deriveExceptions(
       // matches the direction of the variance, the exception is issue-backed
       // (resolvable via the issue actions); otherwise it is still reported
       // from the quantity math alone, e.g. before the server has created the
-      // row yet, with no resolution beyond acknowledging it in the UI.
+      // row yet (always true right after start — nothing has been counted,
+      // so every ordered line reads as short, well before `detectShortages`
+      // ever runs). `resolve()` requires a real issue row for these two
+      // types, so `resolutions` must actually be empty here too, not just
+      // documented as such — offering buttons that are guaranteed to fail
+      // with "no issue row to resolve" is worse than offering none.
       const storedIssue =
         item.issue && item.issue.issue_type === type ? item.issue : undefined;
       const open = storedIssue ? OPEN_STATUSES.includes(storedIssue.status) : true;
@@ -497,7 +505,7 @@ export function deriveExceptions(
           ? `${item.name || item.sku}: expected ${expected}, ${actual} counted so far — still counting.`
           : `${item.name || item.sku}: expected ${expected}, counted ${actual} ` +
             `(${delta > 0 ? '+' : ''}${delta}).`,
-        resolutions: resolutionsFor(type, copy),
+        resolutions: storedIssue ? resolutionsFor(type, copy) : [],
         blocksCompletion: open && blocks,
         issue: storedIssue,
         lineItem: item,

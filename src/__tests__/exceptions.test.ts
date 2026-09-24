@@ -208,6 +208,8 @@ describe('deriveExceptions', () => {
     expect(result[0]!.type).toBe('overage');
     expect(result[0]!.issue).toBe(openOverage);
     expect(result[0]!.key).toBe('issue:9');
+    // Issue-backed — resolving it is meaningful, so the actions are offered.
+    expect(result[0]!.resolutions.length).toBeGreaterThan(0);
   });
 
   it('reports a resolved overage issue as closed even though the count still varies', () => {
@@ -219,13 +221,19 @@ describe('deriveExceptions', () => {
     expect(ex!.blocksCompletion).toBe(false);
   });
 
-  it('falls back to quantity math when no stored issue exists yet', () => {
+  it('falls back to quantity math when no stored issue exists yet, and offers no resolutions', () => {
     const [ex] = deriveExceptions(
       shipment({ line_items: [line({ id: 1, expected_quantity: 5, actual_quantity: 8, issue: null })] }),
     );
     expect(ex!.type).toBe('overage');
     expect(ex!.issue).toBeUndefined();
     expect(ex!.status).toBe('open');
+    // No issue row exists to resolve — offering buttons here would just fail
+    // with "no issue row to resolve" the moment anyone clicked one. This is
+    // also, concretely, every ordered line's state right after an inspection
+    // starts and nothing has been counted yet (delta is never 0), so this
+    // path is hit immediately, not just in some rare timing gap.
+    expect(ex!.resolutions).toEqual([]);
   });
 
   it('reports a canceled wrong-load as a removed unit', () => {
@@ -342,12 +350,17 @@ describe('provisional shortages', () => {
   // line looks short. Those are not exceptions yet.
   const shortLine = [line({ expected_quantity: 10, actual_quantity: 0 })];
 
-  it('reports a mid-inspection shortage as provisional and non-blocking', () => {
+  it('reports a mid-inspection shortage as provisional and non-blocking, with no resolutions', () => {
+    // This is what shows up the instant an inspection starts and nothing has
+    // been counted yet — every ordered line reads as short. It's purely a
+    // client-side quantity-math artifact at this point (no `detectShortages`
+    // row exists), so there's nothing real to resolve against yet.
     const [ex] = deriveExceptions(shipment({ status: 'in_progress', line_items: shortLine }));
     expect(ex!.type).toBe('shortage');
     expect(ex!.severity).toBe('info');
     expect(ex!.blocksCompletion).toBe(false);
     expect(ex!.description).toMatch(/still counting/);
+    expect(ex!.resolutions).toEqual([]);
   });
 
   it('promotes it to blocking once the shipment reaches review', () => {
@@ -391,13 +404,17 @@ describe('unidentified product is reported once', () => {
     // Resolution still routes through the issue row.
     expect(result[0]!.unitSessionId).toBe(99);
     expect(result[0]!.lineItem?.sku).toBe('unknown');
+    expect(result[0]!.resolutions.length).toBeGreaterThan(0);
   });
 
-  it('still reports the sentinel row on its own when no issue row exists', () => {
+  it('still reports the sentinel row on its own when no issue row exists, with no resolutions', () => {
     const result = deriveExceptions(shipment({ line_items: [unknownLine] }));
     expect(result).toHaveLength(1);
     expect(result[0]!.type).toBe('unidentified_product');
     expect(result[0]!.issue).toBeUndefined();
+    // No issue row backs a sentinel-only row — same "don't offer a button
+    // guaranteed to fail" reasoning as the overage/shortage case.
+    expect(result[0]!.resolutions).toEqual([]);
   });
 
   it('does not swallow a `wrong` row alongside an unidentified issue', () => {
