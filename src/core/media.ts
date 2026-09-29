@@ -66,18 +66,12 @@ export interface MediaExpiry {
  * `receivedAt` matters when the URL carries no parseable expiry: the assumed
  * TTL runs from when you received it, not from now.
  */
-export function getMediaExpiry(
-  media: Pick<MediaRef, 'url' | 'expires_at'> | undefined,
-  receivedAt?: Date,
-  now: Date = new Date(),
-): MediaExpiry {
+export function getMediaExpiry(media: Pick<MediaRef, 'url' | 'expires_at'> | undefined, receivedAt?: Date, now: Date = new Date()): MediaExpiry {
   if (!media?.url) return { expired: true, stale: true };
 
   const explicit = media.expires_at ? new Date(media.expires_at) : undefined;
   const parsed = explicit ?? parsePresignedExpiry(media.url);
-  const assumed = receivedAt
-    ? new Date(receivedAt.getTime() + DEFAULT_PRESIGNED_TTL_MS)
-    : undefined;
+  const assumed = receivedAt ? new Date(receivedAt.getTime() + DEFAULT_PRESIGNED_TTL_MS) : undefined;
   const expiresAt = parsed ?? assumed;
 
   if (!expiresAt || Number.isNaN(expiresAt.getTime())) {
@@ -93,10 +87,7 @@ export function getMediaExpiry(
   };
 }
 
-export function isMediaUrlExpired(
-  media: Pick<MediaRef, 'url' | 'expires_at'> | undefined,
-  receivedAt?: Date,
-): boolean {
+export function isMediaUrlExpired(media: Pick<MediaRef, 'url' | 'expires_at'> | undefined, receivedAt?: Date): boolean {
   return getMediaExpiry(media, receivedAt).expired;
 }
 
@@ -113,7 +104,7 @@ export interface FlatMediaItem {
 
 /** Flattens the nested image structure into a list a gallery can render. */
 export function flattenMedia(images: ShipmentImage[] | undefined): FlatMediaItem[] {
-  return (images ?? []).map((image) => ({
+  return (images ?? []).map(image => ({
     id: image.id,
     side: String(image.side),
     url: image.media?.url,
@@ -125,10 +116,7 @@ export function flattenMedia(images: ShipmentImage[] | undefined): FlatMediaItem
   }));
 }
 
-const SIDE_ORDER = [
-  'front', 'front_low', 'front_high', 'right', 'right_low', 'right_high',
-  'back', 'left', 'left_low', 'left_high', 'top', 'all',
-];
+const SIDE_ORDER = ['front', 'front_low', 'front_high', 'right', 'right_low', 'right_high', 'back', 'left', 'left_low', 'left_high', 'top', 'all'];
 
 /** Sorts media into the order operators expect to walk a unit. */
 export function sortMediaBySide<T extends { side: string }>(items: T[]): T[] {

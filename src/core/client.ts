@@ -337,12 +337,35 @@ export class ArvistClient {
    *
    * The URLs are short-lived — copy anything you need to retain to your own
    * storage on receipt rather than storing the URL.
+   *
+   * Some deployments return each image's `media` without a ready `url` —
+   * just a storage `key`/`content_id` — and expect a separate presign call,
+   * the same way video clips work. When that happens this resolves them all
+   * in parallel before returning, so callers never have to special-case it.
    */
   async getShipmentMedia(shipmentId: number, opts?: RequestOptions): Promise<ShipmentImage[]> {
     const shipment = await this.getShipment(shipmentId, opts);
-    return (shipment.units ?? []).flatMap((u) =>
+    const images = (shipment.units ?? []).flatMap((u) =>
       (u.quality_sessions?.[0]?.images ?? []).map((img) => ({ ...img })),
     );
+
+    await Promise.all(
+      images.map(async (img) => {
+        if (img.media?.url || !(img.media?.content_id || img.media?.key)) return;
+        try {
+          const { url } = await this.getImageUrl(
+            (img.media.content_id ?? img.media.key)!,
+            opts,
+          );
+          img.media = { ...img.media, url };
+        } catch {
+          // Leave `url` unset — the gallery surfaces this as an expired/broken
+          // link rather than failing the whole fetch over one bad image.
+        }
+      }),
+    );
+
+    return images;
   }
 
   /** Presigned URL for a captured video clip. */
@@ -350,6 +373,21 @@ export class ArvistClient {
     return this.request<{ url: string }>(
       'GET',
       `/quality/inspection/shipment/video/presigned/${contentId}`,
+      opts,
+    );
+  }
+
+  /**
+   * Presigned URL for a captured image.
+   *
+   * Needed only on deployments where {@link ShipmentImage.media} comes back
+   * with a `content_id`/`key` but no `url` — {@link getShipmentMedia} calls
+   * this for you in that case, so most integrations never need it directly.
+   */
+  getImageUrl(contentId: string, opts?: RequestOptions) {
+    return this.request<{ url: string }>(
+      'GET',
+      `/storage/media/${contentId}/presigned`,
       opts,
     );
   }

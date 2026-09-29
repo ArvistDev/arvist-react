@@ -32,10 +32,7 @@ export interface UseShipmentMediaResult {
  * audit, a customer-facing record — must be copied to your own storage when you
  * receive it. Re-fetching only works while the media is still retained upstream.
  */
-export function useShipmentMedia(
-  source: number | Pick<Shipment, 'id' | 'units'> | undefined,
-  options: { autoRefresh?: boolean } = {},
-): UseShipmentMediaResult {
+export function useShipmentMedia(source: number | Pick<Shipment, 'id' | 'units'> | undefined, options: { autoRefresh?: boolean } = {}): UseShipmentMediaResult {
   const { client } = useArvist();
   const autoRefresh = options.autoRefresh ?? true;
   const [stale, setStale] = React.useState(false);
@@ -44,15 +41,10 @@ export function useShipmentMedia(
   const shipmentId = typeof source === 'number' ? source : source?.id;
 
   // Changes as units and sessions are added, which is the signal to refetch.
-  const revision =
-    typeof source === 'number' || !source
-      ? ''
-      : (source.units ?? [])
-          .map((u) => `${u.id}:${u.quality_sessions?.[0]?.id ?? ''}`)
-          .join('|');
+  const revision = typeof source === 'number' || !source ? '' : (source.units ?? []).map(u => `${u.id}:${u.quality_sessions?.[0]?.id ?? ''}`).join('|');
 
   const result = useAsync<ShipmentImage[]>(
-    async (signal) => {
+    async signal => {
       const images = await client.getShipmentMedia(shipmentId!, { signal });
       receivedAt.current = new Date();
       setStale(false);
@@ -71,8 +63,8 @@ export function useShipmentMedia(
 
     const check = () => {
       const soonest = images
-        .map((img) => getMediaExpiry(img.media, receivedAt.current))
-        .filter((e) => e.msRemaining != null)
+        .map(img => getMediaExpiry(img.media, receivedAt.current))
+        .filter(e => e.msRemaining != null)
         .sort((a, b) => (a.msRemaining ?? 0) - (b.msRemaining ?? 0))[0];
 
       if (!soonest) return;

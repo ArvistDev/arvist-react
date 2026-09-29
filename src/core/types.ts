@@ -173,6 +173,8 @@ export interface ShipmentImage {
 export interface MediaRef {
   id?: number;
   content_id?: string;
+  /** Storage key/path. Present instead of `url` on deployments that require a separate presign call — see {@link ArvistClient.getImageUrl}. */
+  key?: string;
   filename?: string;
   mime_type?: string;
   /** Presigned and short-lived. See {@link isMediaUrlExpired}. */
