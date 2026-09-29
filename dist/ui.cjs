@@ -1,6 +1,6 @@
 'use strict';
 
-var chunkJFRZCX24_cjs = require('./chunk-JFRZCX24.cjs');
+var chunkATH7QVWQ_cjs = require('./chunk-ATH7QVWQ.cjs');
 var React = require('react');
 var jsxRuntime = require('react/jsx-runtime');
 
@@ -84,7 +84,7 @@ function ExceptionCard({
   unstyled
 }) {
   const slot = createSlots({ classNames, unstyled });
-  const open = chunkJFRZCX24_cjs.isExceptionOpen(exception);
+  const open = chunkATH7QVWQ_cjs.isExceptionOpen(exception);
   const [pending, setPending] = React__namespace.useState(null);
   const [reason, setReason] = React__namespace.useState("");
   const [error, setError] = React__namespace.useState(null);
@@ -177,7 +177,7 @@ function ExceptionList({
 }) {
   const slot = createSlots({ classNames, unstyled });
   const visible = React__namespace.useMemo(
-    () => openOnly ? exceptions.filter(chunkJFRZCX24_cjs.isExceptionOpen) : exceptions,
+    () => openOnly ? exceptions.filter(chunkATH7QVWQ_cjs.isExceptionOpen) : exceptions,
     [exceptions, openOnly]
   );
   const blocking = visible.filter((e) => e.blocksCompletion);
@@ -459,16 +459,7 @@ var SIDE_LABELS = {
   right_low: "Right (low)",
   right_high: "Right (high)"
 };
-function MediaGallery({
-  items,
-  stale = false,
-  onRefresh,
-  onSelect,
-  emptyState,
-  className,
-  classNames,
-  unstyled
-}) {
+function MediaGallery({ items, stale = false, onRefresh, onSelect, emptyState, className, classNames, unstyled }) {
   const slot = createSlots({ classNames, unstyled });
   const [failed, setFailed] = React__namespace.useState(() => /* @__PURE__ */ new Set());
   if (items.length === 0) {
@@ -494,26 +485,11 @@ function MediaGallery({
               className: slot("image", "arvist-media__image")
             }
           ),
-          item.damageCount > 0 ? /* @__PURE__ */ jsxRuntime.jsx(
-            "span",
-            {
-              className: slot("badge", "arvist-media__badge"),
-              "aria-label": `${item.damageCount} damage finding(s)`,
-              children: item.damageCount
-            }
-          ) : null
+          item.damageCount > 0 ? /* @__PURE__ */ jsxRuntime.jsx("span", { className: slot("badge", "arvist-media__badge"), "aria-label": `${item.damageCount} damage finding(s)`, children: item.damageCount }) : null
         ] }),
         /* @__PURE__ */ jsxRuntime.jsx("p", { className: slot("caption", "arvist-media__caption"), children: label })
       ] });
-      return /* @__PURE__ */ jsxRuntime.jsx("li", { children: onSelect ? /* @__PURE__ */ jsxRuntime.jsx(
-        "button",
-        {
-          type: "button",
-          onClick: () => onSelect(item),
-          className: slot("item", "arvist-media__item"),
-          children: inner
-        }
-      ) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: slot("item", "arvist-media__item"), children: inner }) }, item.id);
+      return /* @__PURE__ */ jsxRuntime.jsx("li", { children: onSelect ? /* @__PURE__ */ jsxRuntime.jsx("button", { type: "button", onClick: () => onSelect(item), className: slot("item", "arvist-media__item"), children: inner }) : /* @__PURE__ */ jsxRuntime.jsx("div", { className: slot("item", "arvist-media__item"), children: inner }) }, item.id);
     }) })
   ] });
 }

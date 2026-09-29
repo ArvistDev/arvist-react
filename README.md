@@ -27,11 +27,11 @@ and no styling framework to adopt.
 
 Use whichever you need — they are separate entry points.
 
-| Import | What you get | React? |
-|---|---|---|
-| `@arvist/react/core` | API client, realtime feed, exception and reconciliation logic | No |
-| `@arvist/react` | Provider and headless hooks | Yes |
-| `@arvist/react/ui` | Ready-made components built on those hooks | Yes |
+| Import               | What you get                                                  | React? |
+| -------------------- | ------------------------------------------------------------- | ------ |
+| `@arvist/react/core` | API client, realtime feed, exception and reconciliation logic | No     |
+| `@arvist/react`      | Provider and headless hooks                                   | Yes    |
+| `@arvist/react/ui`   | Ready-made components built on those hooks                    | Yes    |
 
 ## Quick start
 
@@ -57,8 +57,7 @@ function App() {
       // `realtime.url` defaults to `config.baseUrl`. Pass it explicitly
       // whenever the app and the realtime server are on different origins —
       // e.g. running the app locally against a remote staging deployment.
-      realtime={{ io, url: 'https://arvist.example.com' }}
-    >
+      realtime={{ io, url: 'https://arvist.example.com' }}>
       <PackStation />
     </ArvistProvider>
   );
@@ -81,9 +80,7 @@ function PackStation() {
       <ExceptionList
         exceptions={exceptions.exceptions}
         resolvingKey={exceptions.resolving}
-        onResolve={(exception, resolution, reason) =>
-          exceptions.resolve({ exception, resolution, reason })
-        }
+        onResolve={(exception, resolution, reason) => exceptions.resolve({ exception, resolution, reason })}
       />
       <button disabled={!inspection.completion.canComplete} onClick={inspection.submit}>
         Complete
@@ -119,20 +116,20 @@ standing in for an off-order item.
 `deriveExceptions()` produces the full list, normalised, sorted blocking-first,
 with resolution paths attached:
 
-| Exception | Where it comes from |
-|---|---|
-| Unidentified product | `unidentified_product` row(s) only |
-| Wrong product | `wrong_product` row(s) only |
-| Overage | `overage` row on the line item only |
-| Shortage | `shortage` row on the line item only |
-| Manual count correction | `is_edited` on a line |
-| Wrong load *(pallet only)* | `wrong_load` row |
-| Missing identifiers *(pallet only)* | `no_identifiers` row |
-| Unit removed | `wrong_load` row resolved as `canceled` |
-| Damage | `damage` row |
+| Exception                           | Where it comes from                     |
+| ----------------------------------- | --------------------------------------- |
+| Unidentified product                | `unidentified_product` row(s) only      |
+| Wrong product                       | `wrong_product` row(s) only             |
+| Overage                             | `overage` row on the line item only     |
+| Shortage                            | `shortage` row on the line item only    |
+| Manual count correction             | `is_edited` on a line                   |
+| Wrong load _(pallet only)_          | `wrong_load` row                        |
+| Missing identifiers _(pallet only)_ | `no_identifiers` row                    |
+| Unit removed                        | `wrong_load` row resolved as `canceled` |
+| Damage                              | `damage` row                            |
 
 Four things this gets right that are easy to get wrong by hand. An
-unidentified item is recorded **twice** — an issue row *and* an `unknown`
+unidentified item is recorded **twice** — an issue row _and_ an `unknown`
 sentinel line carrying the count — and they are one problem, so the count is
 folded in and it is reported once. A `wrong_load` closed by cancelling the unit
 is reported as **Unit removed**, because the unit leaving the inspection is
@@ -181,11 +178,11 @@ correction as part of `submit`. So `useInspection` holds them:
 
 ```tsx
 inspection.stageCorrection(lineItem, 4);
-inspection.corrections;   // pending, sent on submit
+inspection.corrections; // pending, sent on submit
 await inspection.submit(); // flushes them
 ```
 
-Staged corrections are layered *over* the fetched shipment rather than written
+Staged corrections are layered _over_ the fetched shipment rather than written
 into it, so a refetch cannot silently discard them.
 
 A `shortage` exception's own `correct_count` resolution is different: it writes
@@ -238,8 +235,8 @@ shipment where only half the lines carry one must still scan for the rest.
 
 ```tsx
 useScanMatch(shipment?.line_items, {
-  onMatch: (item) => confirm(item),
-  onUnmatched: (scan) => flagOffOrder(scan.value),
+  onMatch: item => confirm(item),
+  onUnmatched: scan => flagOffOrder(scan.value),
 });
 
 upcCoverage(shipment?.line_items); // { total, withUpc, ratio, missing }
@@ -369,6 +366,27 @@ npm test          # 166 tests: derivation, reconciliation, transport, and compon
 npm run typecheck
 npm run build
 ```
+
+### Testing changes against the example
+
+The example depends on this package via `github:ArvistDev/arvist-react`, which
+only ever reflects what's been **pushed and built** — pushing a source change
+without rebuilding `dist/` first is a common way to spend a while wondering why
+a fix "isn't working". For local iteration, link the package instead:
+
+```bash
+# from the repo root
+npm run build
+npm link
+
+# from examples/packstation
+npm link @arvist/react
+```
+
+After each change: rebuild at the root, then clear the example's Vite cache
+(`rm -rf examples/packstation/node_modules/.vite`) and restart its dev server —
+Vite otherwise keeps serving the pre-optimised, pre-link version of the
+package from its dependency cache.
 
 ## License
 

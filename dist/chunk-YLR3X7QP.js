@@ -1,6 +1,4 @@
-'use strict';
-
-var chunkJFRZCX24_cjs = require('./chunk-JFRZCX24.cjs');
+import { isSentinelLineItem, orderedLineItems, deriveExceptions, isExceptionOpen } from './chunk-YDYT2QTR.js';
 
 /**
  * @arvist/react
@@ -149,9 +147,7 @@ var ArvistClient = class {
   async findStationByName(areaName, opts) {
     const stations = await this.listStations({}, opts);
     const needle = areaName.trim().toLowerCase();
-    const match = stations.find(
-      (s) => s.area_name?.trim().toLowerCase() === needle || s.name?.trim().toLowerCase() === needle
-    );
+    const match = stations.find((s) => s.area_name?.trim().toLowerCase() === needle || s.name?.trim().toLowerCase() === needle);
     if (!match) {
       throw new ArvistError({
         code: "station_not_found",
@@ -251,11 +247,7 @@ var ArvistClient = class {
   // Exceptions
   // -------------------------------------------------------------------------
   listIssues(unitSessionId, opts) {
-    return this.request(
-      "GET",
-      `/quality/inspection/shipment-issue/unit/${unitSessionId}`,
-      opts
-    );
+    return this.request("GET", `/quality/inspection/shipment-issue/unit/${unitSessionId}`, opts);
   }
   /**
    * Sets the status of a session-scoped exception by unit session and type.
@@ -270,11 +262,7 @@ var ArvistClient = class {
    */
   async resolveIssue(input, opts) {
     const { unit_session_id, ...body } = input;
-    const result = await this.request(
-      "PUT",
-      `/quality/inspection/shipment-issue/unit/${unit_session_id}`,
-      { body, ...opts }
-    );
+    const result = await this.request("PUT", `/quality/inspection/shipment-issue/unit/${unit_session_id}`, { body, ...opts });
     return toActionResult(result);
   }
   /**
@@ -287,11 +275,7 @@ var ArvistClient = class {
    */
   async resolveIssueById(input, opts) {
     const { issue_id, ...body } = input;
-    const result = await this.request(
-      "PATCH",
-      `/quality/inspection/shipment-issue/${issue_id}/resolve`,
-      { body, ...opts }
-    );
+    const result = await this.request("PATCH", `/quality/inspection/shipment-issue/${issue_id}/resolve`, { body, ...opts });
     return toActionResult(result);
   }
   /**
@@ -311,20 +295,12 @@ var ArvistClient = class {
    * The call fails if the `unknown` bucket is already empty.
    */
   async updateUnknownProduct(input, opts) {
-    const result = await this.request(
-      "PUT",
-      "/quality/inspection/shipment/unknown-product/update",
-      { body: input, ...opts }
-    );
+    const result = await this.request("PUT", "/quality/inspection/shipment/unknown-product/update", { body: input, ...opts });
     return toActionResult(result);
   }
   /** Supplies pallet identifiers that could not be read from the label. */
   async updatePalletIdentifier(body, opts) {
-    const result = await this.request(
-      "PUT",
-      "/quality/inspection/shipment/pallet-identifier",
-      { body, ...opts }
-    );
+    const result = await this.request("PUT", "/quality/inspection/shipment/pallet-identifier", { body, ...opts });
     return toActionResult(result);
   }
   // -------------------------------------------------------------------------
@@ -335,20 +311,43 @@ var ArvistClient = class {
    *
    * The URLs are short-lived — copy anything you need to retain to your own
    * storage on receipt rather than storing the URL.
+   *
+   * Some deployments return each image's `media` without a ready `url` —
+   * just a storage `key`/`content_id` — and expect a separate presign call,
+   * the same way video clips work. When that happens this resolves them all
+   * in parallel before returning, so callers never have to special-case it.
    */
   async getShipmentMedia(shipmentId, opts) {
     const shipment = await this.getShipment(shipmentId, opts);
-    return (shipment.units ?? []).flatMap(
-      (u) => (u.quality_sessions?.[0]?.images ?? []).map((img) => ({ ...img }))
+    const images = (shipment.units ?? []).flatMap((u) => (u.quality_sessions?.[0]?.images ?? []).map((img) => ({ ...img })));
+    await Promise.all(
+      images.map(async (img) => {
+        const media = img.media;
+        if (!media || media.url) return;
+        const resolvedId = media.content_id ?? media.id ?? media.content?.image?.id ?? media.content?.video?.id ?? media.key ?? media.content?.image?.key ?? media.content?.video?.key;
+        if (resolvedId == null) return;
+        try {
+          const { url } = await this.getImageUrl(String(resolvedId), opts);
+          img.media = { ...media, url };
+        } catch {
+        }
+      })
     );
+    return images;
   }
   /** Presigned URL for a captured video clip. */
   getVideoUrl(contentId, opts) {
-    return this.request(
-      "GET",
-      `/quality/inspection/shipment/video/presigned/${contentId}`,
-      opts
-    );
+    return this.request("GET", `/quality/inspection/shipment/video/presigned/${contentId}`, opts);
+  }
+  /**
+   * Presigned URL for a captured image.
+   *
+   * Needed only on deployments where {@link ShipmentImage.media} comes back
+   * with a `content_id`/`key` but no `url` — {@link getShipmentMedia} calls
+   * this for you in that case, so most integrations never need it directly.
+   */
+  getImageUrl(contentId, opts) {
+    return this.request("GET", `/storage/media/${contentId}/presigned`, opts);
   }
   // -------------------------------------------------------------------------
   // Diagnostics
@@ -363,10 +362,7 @@ var ArvistClient = class {
    */
   async checkStationBinding(areaName, opts) {
     const station = await this.findStationByName(areaName, opts);
-    const open = await this.listShipments(
-      { areaName, status: "in_progress", limit: 1 },
-      opts
-    );
+    const open = await this.listShipments({ areaName, status: "in_progress", limit: 1 }, opts);
     return {
       station,
       hasOpenInspection: open.data.length > 0,
@@ -784,7 +780,7 @@ function getLineItemBarcode(item) {
 function buildBarcodeIndex(items) {
   const index = /* @__PURE__ */ new Map();
   for (const item of items ?? []) {
-    if (chunkJFRZCX24_cjs.isSentinelLineItem(item)) continue;
+    if (isSentinelLineItem(item)) continue;
     const code = getLineItemBarcode(item);
     if (code) index.set(normalizeBarcode(code), item);
     if (item.sku) index.set(normalizeBarcode(item.sku), item);
@@ -796,7 +792,7 @@ function normalizeBarcode(code) {
   return /^\d+$/.test(trimmed) ? trimmed.replace(/^0+(?=\d)/, "") : trimmed;
 }
 function upcCoverage(items) {
-  const ordered = chunkJFRZCX24_cjs.orderedLineItems(items);
+  const ordered = orderedLineItems(items);
   const missing = ordered.filter((i) => {
     const upc = i.additional_data?.["upc"];
     return !(typeof upc === "string" && upc.trim()) && typeof upc !== "number";
@@ -811,7 +807,7 @@ function upcCoverage(items) {
 }
 function reconcile(shipment) {
   const all = shipment?.line_items ?? [];
-  const lines = chunkJFRZCX24_cjs.orderedLineItems(all).map((item) => {
+  const lines = orderedLineItems(all).map((item) => {
     const expected = item.expected_quantity ?? 0;
     const actual = item.actual_quantity ?? 0;
     const delta = actual - expected;
@@ -825,7 +821,7 @@ function reconcile(shipment) {
       barcode: getLineItemBarcode(item)
     };
   });
-  const offOrder = all.filter((i) => chunkJFRZCX24_cjs.isSentinelLineItem(i) && (i.actual_quantity ?? 0) > 0).map((item) => ({
+  const offOrder = all.filter((i) => isSentinelLineItem(i) && (i.actual_quantity ?? 0) > 0).map((item) => ({
     sku: item.sku.toLowerCase().trim(),
     item,
     quantity: item.actual_quantity ?? 0
@@ -853,7 +849,7 @@ function reconcile(shipment) {
   };
 }
 function checkCompletion(shipment, options = {}) {
-  const open = chunkJFRZCX24_cjs.deriveExceptions(shipment, options).filter(chunkJFRZCX24_cjs.isExceptionOpen);
+  const open = deriveExceptions(shipment, options).filter(isExceptionOpen);
   const blockers = open.filter((e) => e.blocksCompletion);
   const warnings = open.filter((e) => !e.blocksCompletion);
   return {
@@ -911,31 +907,24 @@ function isMediaUrlExpired(media, receivedAt) {
   return getMediaExpiry(media, receivedAt).expired;
 }
 function flattenMedia(images) {
-  return (images ?? []).map((image) => ({
-    id: image.id,
-    side: String(image.side),
-    url: image.media?.url,
-    filename: image.media?.filename ?? image.filepath,
-    contentId: image.media?.content_id,
-    mimeType: image.media?.mime_type,
-    unitSessionId: image.shipment_unit_session_id,
-    damageCount: image.damages?.length ?? 0
-  }));
+  return (images ?? []).map((image, index) => {
+    const media = image.media;
+    const file = media?.content?.image ?? media?.content?.video;
+    const resolvedId = image.id ?? media?.id ?? file?.id ?? index;
+    const resolvedContentId = media?.content_id ?? (media?.id != null ? String(media.id) : void 0) ?? (file?.id != null ? String(file.id) : void 0);
+    return {
+      id: resolvedId,
+      side: String(image.side),
+      url: media?.url,
+      filename: media?.filename ?? file?.filename ?? image.filepath,
+      contentId: resolvedContentId,
+      mimeType: media?.mime_type ?? file?.content_type,
+      unitSessionId: image.shipment_unit_session_id,
+      damageCount: image.damages?.length ?? 0
+    };
+  });
 }
-var SIDE_ORDER = [
-  "front",
-  "front_low",
-  "front_high",
-  "right",
-  "right_low",
-  "right_high",
-  "back",
-  "left",
-  "left_low",
-  "left_high",
-  "top",
-  "all"
-];
+var SIDE_ORDER = ["front", "front_low", "front_high", "right", "right_low", "right_high", "back", "left", "left_low", "left_high", "top", "all"];
 function sortMediaBySide(items) {
   return [...items].sort((a, b) => {
     const ai = SIDE_ORDER.indexOf(a.side);
@@ -1003,30 +992,6 @@ function validateGtinCheckDigit(code) {
   return (10 - sum % 10) % 10 === check;
 }
 
-exports.ArvistClient = ArvistClient;
-exports.ArvistError = ArvistError;
-exports.DEFAULT_ERROR_MESSAGES = DEFAULT_ERROR_MESSAGES;
-exports.DEFAULT_PRESIGNED_TTL_MS = DEFAULT_PRESIGNED_TTL_MS;
-exports.InspectionFeed = InspectionFeed;
-exports.PRESIGN_REFRESH_MARGIN_MS = PRESIGN_REFRESH_MARGIN_MS;
-exports.buildBarcodeIndex = buildBarcodeIndex;
-exports.checkCompletion = checkCompletion;
-exports.createErrorMessageResolver = createErrorMessageResolver;
-exports.createScanBuffer = createScanBuffer;
-exports.createSocketIoTransport = createSocketIoTransport;
-exports.errorFromResponse = errorFromResponse;
-exports.flattenMedia = flattenMedia;
-exports.getDisplayMessage = getDisplayMessage;
-exports.getLineItemBarcode = getLineItemBarcode;
-exports.getMediaExpiry = getMediaExpiry;
-exports.isMediaUrlExpired = isMediaUrlExpired;
-exports.normalizeBarcode = normalizeBarcode;
-exports.parsePresignedExpiry = parsePresignedExpiry;
-exports.parseScan = parseScan;
-exports.reconcile = reconcile;
-exports.sortMediaBySide = sortMediaBySide;
-exports.topics = topics;
-exports.upcCoverage = upcCoverage;
-exports.validateGtinCheckDigit = validateGtinCheckDigit;
-//# sourceMappingURL=chunk-FZOLXGG6.cjs.map
-//# sourceMappingURL=chunk-FZOLXGG6.cjs.map
+export { ArvistClient, ArvistError, DEFAULT_ERROR_MESSAGES, DEFAULT_PRESIGNED_TTL_MS, InspectionFeed, PRESIGN_REFRESH_MARGIN_MS, buildBarcodeIndex, checkCompletion, createErrorMessageResolver, createScanBuffer, createSocketIoTransport, errorFromResponse, flattenMedia, getDisplayMessage, getLineItemBarcode, getMediaExpiry, isMediaUrlExpired, normalizeBarcode, parsePresignedExpiry, parseScan, reconcile, sortMediaBySide, topics, upcCoverage, validateGtinCheckDigit };
+//# sourceMappingURL=chunk-YLR3X7QP.js.map
+//# sourceMappingURL=chunk-YLR3X7QP.js.map

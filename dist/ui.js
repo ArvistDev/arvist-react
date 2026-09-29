@@ -1,4 +1,4 @@
-import { isExceptionOpen } from './chunk-E5FMJVL7.js';
+import { isExceptionOpen } from './chunk-YDYT2QTR.js';
 import * as React from 'react';
 import { jsxs, jsx, Fragment } from 'react/jsx-runtime';
 
@@ -437,16 +437,7 @@ var SIDE_LABELS = {
   right_low: "Right (low)",
   right_high: "Right (high)"
 };
-function MediaGallery({
-  items,
-  stale = false,
-  onRefresh,
-  onSelect,
-  emptyState,
-  className,
-  classNames,
-  unstyled
-}) {
+function MediaGallery({ items, stale = false, onRefresh, onSelect, emptyState, className, classNames, unstyled }) {
   const slot = createSlots({ classNames, unstyled });
   const [failed, setFailed] = React.useState(() => /* @__PURE__ */ new Set());
   if (items.length === 0) {
@@ -472,26 +463,11 @@ function MediaGallery({
               className: slot("image", "arvist-media__image")
             }
           ),
-          item.damageCount > 0 ? /* @__PURE__ */ jsx(
-            "span",
-            {
-              className: slot("badge", "arvist-media__badge"),
-              "aria-label": `${item.damageCount} damage finding(s)`,
-              children: item.damageCount
-            }
-          ) : null
+          item.damageCount > 0 ? /* @__PURE__ */ jsx("span", { className: slot("badge", "arvist-media__badge"), "aria-label": `${item.damageCount} damage finding(s)`, children: item.damageCount }) : null
         ] }),
         /* @__PURE__ */ jsx("p", { className: slot("caption", "arvist-media__caption"), children: label })
       ] });
-      return /* @__PURE__ */ jsx("li", { children: onSelect ? /* @__PURE__ */ jsx(
-        "button",
-        {
-          type: "button",
-          onClick: () => onSelect(item),
-          className: slot("item", "arvist-media__item"),
-          children: inner
-        }
-      ) : /* @__PURE__ */ jsx("div", { className: slot("item", "arvist-media__item"), children: inner }) }, item.id);
+      return /* @__PURE__ */ jsx("li", { children: onSelect ? /* @__PURE__ */ jsx("button", { type: "button", onClick: () => onSelect(item), className: slot("item", "arvist-media__item"), children: inner }) : /* @__PURE__ */ jsx("div", { className: slot("item", "arvist-media__item"), children: inner }) }, item.id);
     }) })
   ] });
 }

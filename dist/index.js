@@ -1,7 +1,7 @@
-import { ArvistClient, createSocketIoTransport, InspectionFeed, createErrorMessageResolver, ArvistError, reconcile, checkCompletion, createScanBuffer, parseScan, buildBarcodeIndex, sortMediaBySide, flattenMedia, getMediaExpiry } from './chunk-C3LOARKS.js';
-export { ArvistClient, ArvistError, DEFAULT_ERROR_MESSAGES, DEFAULT_PRESIGNED_TTL_MS, InspectionFeed, PRESIGN_REFRESH_MARGIN_MS, buildBarcodeIndex, checkCompletion, createErrorMessageResolver, createScanBuffer, createSocketIoTransport, errorFromResponse, flattenMedia, getDisplayMessage, getLineItemBarcode, getMediaExpiry, isMediaUrlExpired, normalizeBarcode, parsePresignedExpiry, parseScan, reconcile, sortMediaBySide, topics, upcCoverage, validateGtinCheckDigit } from './chunk-C3LOARKS.js';
-import { DEFAULT_EXCEPTION_COPY, mergeRealtimeIssues, deriveExceptions, isExceptionOpen, ISSUE_ACTION_BY_RESOLUTION } from './chunk-E5FMJVL7.js';
-export { DEFAULT_EXCEPTION_COPY, ISSUE_ACTION_BY_RESOLUTION, PALLET_ONLY_EXCEPTIONS, SENTINEL_SKUS, collectIssues, deriveExceptions, isExceptionOpen, isSentinelLineItem, mergeRealtimeIssues, orderedLineItems, resolutionsFor } from './chunk-E5FMJVL7.js';
+import { ArvistClient, createSocketIoTransport, InspectionFeed, createErrorMessageResolver, ArvistError, reconcile, checkCompletion, createScanBuffer, parseScan, buildBarcodeIndex, sortMediaBySide, flattenMedia, getMediaExpiry } from './chunk-YLR3X7QP.js';
+export { ArvistClient, ArvistError, DEFAULT_ERROR_MESSAGES, DEFAULT_PRESIGNED_TTL_MS, InspectionFeed, PRESIGN_REFRESH_MARGIN_MS, buildBarcodeIndex, checkCompletion, createErrorMessageResolver, createScanBuffer, createSocketIoTransport, errorFromResponse, flattenMedia, getDisplayMessage, getLineItemBarcode, getMediaExpiry, isMediaUrlExpired, normalizeBarcode, parsePresignedExpiry, parseScan, reconcile, sortMediaBySide, topics, upcCoverage, validateGtinCheckDigit } from './chunk-YLR3X7QP.js';
+import { DEFAULT_EXCEPTION_COPY, mergeRealtimeCounts, mergeRealtimeIssues, deriveExceptions, isExceptionOpen, ISSUE_ACTION_BY_RESOLUTION } from './chunk-YDYT2QTR.js';
+export { DEFAULT_EXCEPTION_COPY, ISSUE_ACTION_BY_RESOLUTION, PALLET_ONLY_EXCEPTIONS, SENTINEL_SKUS, collectIssues, deriveExceptions, isExceptionOpen, isSentinelLineItem, mergeRealtimeCounts, mergeRealtimeIssues, orderedLineItems, resolutionsFor } from './chunk-YDYT2QTR.js';
 import * as React4 from 'react';
 import { jsx } from 'react/jsx-runtime';
 
@@ -214,16 +214,28 @@ function useInspection(options = {}) {
     setConnection(feed.state);
     return feed.onStateChange((state) => setConnection(state));
   }, [feed]);
+  const refreshSeqRef = React4.useRef(0);
   const refresh = React4.useCallback(async () => {
     const id = shipmentIdRef.current;
     if (id == null) return;
+    const seq = ++refreshSeqRef.current;
     try {
       const fresh = await client.getShipment(id);
-      if (shipmentIdRef.current !== id) return;
-      setShipment(fresh);
+      if (shipmentIdRef.current !== id || refreshSeqRef.current !== seq) return;
+      setShipment((prev) => {
+        if (!prev) return fresh;
+        const line_items = fresh.line_items.map((item) => {
+          const current = prev.line_items.find(
+            (i) => i.sku === item.sku && String(i.product_id) === String(item.product_id)
+          );
+          if (!current || current.actual_quantity <= item.actual_quantity) return item;
+          return { ...item, actual_quantity: current.actual_quantity, is_edited: current.is_edited };
+        });
+        return { ...fresh, line_items };
+      });
       setPhase(phaseFromStatus(fresh.status));
     } catch (err) {
-      if (shipmentIdRef.current === id) setError(toArvistError(err));
+      if (shipmentIdRef.current === id && refreshSeqRef.current === seq) setError(toArvistError(err));
     }
   }, [client]);
   const adoptingStationShipmentRef = React4.useRef(false);
@@ -263,9 +275,7 @@ function useInspection(options = {}) {
           setError(void 0);
           break;
         case "unit-completed":
-          setShipment(
-            (prev) => prev ? mergeRealtimeIssues(prev, event.payload) : prev
-          );
+          setShipment((prev) => prev ? mergeRealtimeCounts(mergeRealtimeIssues(prev, event.payload), event.payload) : prev);
           break;
         case "status":
           setProgress(event.progress);
@@ -305,22 +315,19 @@ function useInspection(options = {}) {
     completedFiredFor.current = shipment.id;
     onCompletedRef.current?.(shipment, reconcile(shipment));
   }, [phase, shipment]);
-  const act = React4.useCallback(
-    async (fn) => {
-      setLoading(true);
-      setError(void 0);
-      try {
-        return await fn();
-      } catch (err) {
-        const normalized = toArvistError(err);
-        setError(normalized);
-        throw normalized;
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+  const act = React4.useCallback(async (fn) => {
+    setLoading(true);
+    setError(void 0);
+    try {
+      return await fn();
+    } catch (err) {
+      const normalized = toArvistError(err);
+      setError(normalized);
+      throw normalized;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
   const start = React4.useCallback(
     async (input) => {
       setPhase("starting");
@@ -329,9 +336,7 @@ function useInspection(options = {}) {
         ...input
       };
       const idempotencyKey = payload.shipment_key ?? payload.order_numbers?.join(",");
-      const started = await act(
-        () => client.startInspection(payload, idempotencyKey ? { idempotencyKey } : void 0)
-      ).catch((err) => {
+      const started = await act(() => client.startInspection(payload, idempotencyKey ? { idempotencyKey } : void 0)).catch((err) => {
         setPhase("error");
         throw err;
       });
@@ -373,22 +378,12 @@ function useInspection(options = {}) {
       });
     }
     const id = lineItem.id;
-    setCorrections((prev) => [
-      ...prev.filter((c) => c.id !== id),
-      { id, actual_quantity: quantity, is_edited: true }
-    ]);
+    setCorrections((prev) => [...prev.filter((c) => c.id !== id), { id, actual_quantity: quantity, is_edited: true }]);
   }, []);
   const clearCorrections = React4.useCallback(() => setCorrections([]), []);
   const submit = React4.useCallback(async () => {
     const staged = corrections;
-    adopt(
-      await act(
-        () => client.submitInspection(
-          requireShipment(),
-          staged.length ? { line_items: staged } : {}
-        )
-      )
-    );
+    adopt(await act(() => client.submitInspection(requireShipment(), { line_items: staged })));
     setCorrections([]);
     await refresh();
   }, [act, adopt, client, corrections, requireShipment, refresh]);
@@ -425,10 +420,7 @@ function useInspection(options = {}) {
     };
   }, [shipment, corrections]);
   const reconciliation = React4.useMemo(() => reconcile(effectiveShipment), [effectiveShipment]);
-  const completion = React4.useMemo(
-    () => checkCompletion(effectiveShipment, { autoCompleted }),
-    [effectiveShipment, autoCompleted]
-  );
+  const completion = React4.useMemo(() => checkCompletion(effectiveShipment, { autoCompleted }), [effectiveShipment, autoCompleted]);
   return {
     shipment: effectiveShipment,
     phase,
@@ -743,6 +735,7 @@ function isEditable(target) {
   const tag = target.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
+var MIN_REFRESH_INTERVAL_MS = 15e3;
 function useShipmentMedia(source, options = {}) {
   const { client } = useArvist();
   const autoRefresh = options.autoRefresh ?? true;
@@ -770,7 +763,8 @@ function useShipmentMedia(source, options = {}) {
       if (!soonest) return;
       if (soonest.stale) {
         setStale(true);
-        if (autoRefresh) void refresh();
+        const sinceFetchMs = receivedAt.current ? Date.now() - receivedAt.current.getTime() : Infinity;
+        if (autoRefresh && sinceFetchMs >= MIN_REFRESH_INTERVAL_MS) void refresh();
       }
     };
     check();

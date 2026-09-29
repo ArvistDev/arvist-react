@@ -1,7 +1,7 @@
 'use strict';
 
-var chunkFZOLXGG6_cjs = require('./chunk-FZOLXGG6.cjs');
-var chunkJFRZCX24_cjs = require('./chunk-JFRZCX24.cjs');
+var chunkLCGM55MY_cjs = require('./chunk-LCGM55MY.cjs');
+var chunkATH7QVWQ_cjs = require('./chunk-ATH7QVWQ.cjs');
 var React4 = require('react');
 var jsxRuntime = require('react/jsx-runtime');
 
@@ -51,20 +51,20 @@ function ArvistProvider({
     throw new Error("ArvistProvider: pass either `config` or `client`.");
   }
   const client = React4__namespace.useMemo(
-    () => providedClient ?? new chunkFZOLXGG6_cjs.ArvistClient(config),
+    () => providedClient ?? new chunkLCGM55MY_cjs.ArvistClient(config),
     // A new client per config identity; memoise `config` upstream to keep it stable.
     [providedClient, config]
   );
   const feed = React4__namespace.useMemo(() => {
     if (!realtime) return null;
-    const transport = "transport" in realtime ? realtime.transport : chunkFZOLXGG6_cjs.createSocketIoTransport({
+    const transport = "transport" in realtime ? realtime.transport : chunkLCGM55MY_cjs.createSocketIoTransport({
       url: realtime.url ?? config?.baseUrl ?? "",
       path: realtime.path,
       auth: realtime.auth,
       withCredentials: realtime.withCredentials ?? true,
       io: realtime.io
     });
-    return new chunkFZOLXGG6_cjs.InspectionFeed({ transport });
+    return new chunkLCGM55MY_cjs.InspectionFeed({ transport });
   }, [realtime, config?.baseUrl]);
   React4__namespace.useEffect(() => {
     if (!feed) return;
@@ -76,10 +76,10 @@ function ArvistProvider({
       client,
       feed,
       realtimeAvailable: feed !== null,
-      resolveErrorMessage: chunkFZOLXGG6_cjs.createErrorMessageResolver(errorMessages),
+      resolveErrorMessage: chunkLCGM55MY_cjs.createErrorMessageResolver(errorMessages),
       copy: {
-        titles: { ...chunkJFRZCX24_cjs.DEFAULT_EXCEPTION_COPY.titles, ...copy?.titles },
-        actions: { ...chunkJFRZCX24_cjs.DEFAULT_EXCEPTION_COPY.actions, ...copy?.actions }
+        titles: { ...chunkATH7QVWQ_cjs.DEFAULT_EXCEPTION_COPY.titles, ...copy?.titles },
+        actions: { ...chunkATH7QVWQ_cjs.DEFAULT_EXCEPTION_COPY.actions, ...copy?.actions }
       },
       autoCompleted
     }),
@@ -115,7 +115,7 @@ function useAsync(fn, deps, options = {}) {
         setState({
           data: void 0,
           loading: false,
-          error: chunkFZOLXGG6_cjs.ArvistError.is(err) ? err : new chunkFZOLXGG6_cjs.ArvistError({ code: "unknown", message: "Something went wrong.", cause: err })
+          error: chunkLCGM55MY_cjs.ArvistError.is(err) ? err : new chunkLCGM55MY_cjs.ArvistError({ code: "unknown", message: "Something went wrong.", cause: err })
         });
       }
     },
@@ -205,7 +205,7 @@ function useInspection(options = {}) {
     client.findStationByName(areaName).then((station) => {
       if (!cancelled) setResolvedAreaId(station.area_id);
     }).catch((err) => {
-      if (!cancelled && chunkFZOLXGG6_cjs.ArvistError.is(err)) setError(err);
+      if (!cancelled && chunkLCGM55MY_cjs.ArvistError.is(err)) setError(err);
     });
     return () => {
       cancelled = true;
@@ -234,16 +234,28 @@ function useInspection(options = {}) {
     setConnection(feed.state);
     return feed.onStateChange((state) => setConnection(state));
   }, [feed]);
+  const refreshSeqRef = React4__namespace.useRef(0);
   const refresh = React4__namespace.useCallback(async () => {
     const id = shipmentIdRef.current;
     if (id == null) return;
+    const seq = ++refreshSeqRef.current;
     try {
       const fresh = await client.getShipment(id);
-      if (shipmentIdRef.current !== id) return;
-      setShipment(fresh);
+      if (shipmentIdRef.current !== id || refreshSeqRef.current !== seq) return;
+      setShipment((prev) => {
+        if (!prev) return fresh;
+        const line_items = fresh.line_items.map((item) => {
+          const current = prev.line_items.find(
+            (i) => i.sku === item.sku && String(i.product_id) === String(item.product_id)
+          );
+          if (!current || current.actual_quantity <= item.actual_quantity) return item;
+          return { ...item, actual_quantity: current.actual_quantity, is_edited: current.is_edited };
+        });
+        return { ...fresh, line_items };
+      });
       setPhase(phaseFromStatus(fresh.status));
     } catch (err) {
-      if (shipmentIdRef.current === id) setError(toArvistError(err));
+      if (shipmentIdRef.current === id && refreshSeqRef.current === seq) setError(toArvistError(err));
     }
   }, [client]);
   const adoptingStationShipmentRef = React4__namespace.useRef(false);
@@ -283,9 +295,7 @@ function useInspection(options = {}) {
           setError(void 0);
           break;
         case "unit-completed":
-          setShipment(
-            (prev) => prev ? chunkJFRZCX24_cjs.mergeRealtimeIssues(prev, event.payload) : prev
-          );
+          setShipment((prev) => prev ? chunkATH7QVWQ_cjs.mergeRealtimeCounts(chunkATH7QVWQ_cjs.mergeRealtimeIssues(prev, event.payload), event.payload) : prev);
           break;
         case "status":
           setProgress(event.progress);
@@ -307,7 +317,7 @@ function useInspection(options = {}) {
         case "error":
           setPhase("error");
           setError(
-            new chunkFZOLXGG6_cjs.ArvistError({
+            new chunkLCGM55MY_cjs.ArvistError({
               code: "server_error",
               message: event.message ?? "The inspection reported an error.",
               detail: event.raw
@@ -323,24 +333,21 @@ function useInspection(options = {}) {
     if (phase !== "completed" || !shipment) return;
     if (completedFiredFor.current === shipment.id) return;
     completedFiredFor.current = shipment.id;
-    onCompletedRef.current?.(shipment, chunkFZOLXGG6_cjs.reconcile(shipment));
+    onCompletedRef.current?.(shipment, chunkLCGM55MY_cjs.reconcile(shipment));
   }, [phase, shipment]);
-  const act = React4__namespace.useCallback(
-    async (fn) => {
-      setLoading(true);
-      setError(void 0);
-      try {
-        return await fn();
-      } catch (err) {
-        const normalized = toArvistError(err);
-        setError(normalized);
-        throw normalized;
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+  const act = React4__namespace.useCallback(async (fn) => {
+    setLoading(true);
+    setError(void 0);
+    try {
+      return await fn();
+    } catch (err) {
+      const normalized = toArvistError(err);
+      setError(normalized);
+      throw normalized;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
   const start = React4__namespace.useCallback(
     async (input) => {
       setPhase("starting");
@@ -349,9 +356,7 @@ function useInspection(options = {}) {
         ...input
       };
       const idempotencyKey = payload.shipment_key ?? payload.order_numbers?.join(",");
-      const started = await act(
-        () => client.startInspection(payload, idempotencyKey ? { idempotencyKey } : void 0)
-      ).catch((err) => {
+      const started = await act(() => client.startInspection(payload, idempotencyKey ? { idempotencyKey } : void 0)).catch((err) => {
         setPhase("error");
         throw err;
       });
@@ -364,7 +369,7 @@ function useInspection(options = {}) {
   const requireShipment = React4__namespace.useCallback(() => {
     const id = shipmentIdRef.current;
     if (id == null) {
-      throw new chunkFZOLXGG6_cjs.ArvistError({ code: "shipment_not_found", message: "No inspection is open." });
+      throw new chunkLCGM55MY_cjs.ArvistError({ code: "shipment_not_found", message: "No inspection is open." });
     }
     return id;
   }, []);
@@ -375,7 +380,7 @@ function useInspection(options = {}) {
     const result = await act(() => client.finishInspection(requireShipment()));
     if (result.blocked_by === "shortage") {
       await refresh();
-      const blocked = new chunkFZOLXGG6_cjs.ArvistError({
+      const blocked = new chunkLCGM55MY_cjs.ArvistError({
         code: "completion_blocked",
         message: result.message,
         detail: result.shortage_issues
@@ -387,28 +392,18 @@ function useInspection(options = {}) {
   }, [act, adopt, client, refresh, requireShipment]);
   const stageCorrection = React4__namespace.useCallback((lineItem, quantity) => {
     if (lineItem.id == null) {
-      throw new chunkFZOLXGG6_cjs.ArvistError({
+      throw new chunkLCGM55MY_cjs.ArvistError({
         code: "validation_failed",
         message: "That line item has no id, so its count cannot be corrected."
       });
     }
     const id = lineItem.id;
-    setCorrections((prev) => [
-      ...prev.filter((c) => c.id !== id),
-      { id, actual_quantity: quantity, is_edited: true }
-    ]);
+    setCorrections((prev) => [...prev.filter((c) => c.id !== id), { id, actual_quantity: quantity, is_edited: true }]);
   }, []);
   const clearCorrections = React4__namespace.useCallback(() => setCorrections([]), []);
   const submit = React4__namespace.useCallback(async () => {
     const staged = corrections;
-    adopt(
-      await act(
-        () => client.submitInspection(
-          requireShipment(),
-          staged.length ? { line_items: staged } : {}
-        )
-      )
-    );
+    adopt(await act(() => client.submitInspection(requireShipment(), { line_items: staged })));
     setCorrections([]);
     await refresh();
   }, [act, adopt, client, corrections, requireShipment, refresh]);
@@ -444,11 +439,8 @@ function useInspection(options = {}) {
       })
     };
   }, [shipment, corrections]);
-  const reconciliation = React4__namespace.useMemo(() => chunkFZOLXGG6_cjs.reconcile(effectiveShipment), [effectiveShipment]);
-  const completion = React4__namespace.useMemo(
-    () => chunkFZOLXGG6_cjs.checkCompletion(effectiveShipment, { autoCompleted }),
-    [effectiveShipment, autoCompleted]
-  );
+  const reconciliation = React4__namespace.useMemo(() => chunkLCGM55MY_cjs.reconcile(effectiveShipment), [effectiveShipment]);
+  const completion = React4__namespace.useMemo(() => chunkLCGM55MY_cjs.checkCompletion(effectiveShipment, { autoCompleted }), [effectiveShipment, autoCompleted]);
   return {
     shipment: effectiveShipment,
     phase,
@@ -502,7 +494,7 @@ function phaseFromStatus(status) {
   }
 }
 function toArvistError(err) {
-  return chunkFZOLXGG6_cjs.ArvistError.is(err) ? err : new chunkFZOLXGG6_cjs.ArvistError({ code: "unknown", message: "Something went wrong.", cause: err });
+  return chunkLCGM55MY_cjs.ArvistError.is(err) ? err : new chunkLCGM55MY_cjs.ArvistError({ code: "unknown", message: "Something went wrong.", cause: err });
 }
 var EMPTY_BY_TYPE = {
   unidentified_product: [],
@@ -522,10 +514,10 @@ function useExceptions(shipment, options = {}) {
   const onResolvedRef = React4__namespace.useRef(options.onResolved);
   onResolvedRef.current = options.onResolved;
   const exceptions = React4__namespace.useMemo(
-    () => chunkJFRZCX24_cjs.deriveExceptions(shipment, { copy, autoCompleted }),
+    () => chunkATH7QVWQ_cjs.deriveExceptions(shipment, { copy, autoCompleted }),
     [shipment, copy, autoCompleted]
   );
-  const open = React4__namespace.useMemo(() => exceptions.filter(chunkJFRZCX24_cjs.isExceptionOpen), [exceptions]);
+  const open = React4__namespace.useMemo(() => exceptions.filter(chunkATH7QVWQ_cjs.isExceptionOpen), [exceptions]);
   const blocking = React4__namespace.useMemo(() => open.filter((e) => e.blocksCompletion), [open]);
   const byType = React4__namespace.useMemo(() => {
     const grouped = {
@@ -547,13 +539,13 @@ function useExceptions(shipment, options = {}) {
     async (args) => {
       const { exception, resolution } = args;
       if (resolution.requiresReason && !args.reason?.trim()) {
-        throw new chunkFZOLXGG6_cjs.ArvistError({
+        throw new chunkLCGM55MY_cjs.ArvistError({
           code: "validation_failed",
           message: "A reason is required to record this as unresolved."
         });
       }
       if (!shipment) {
-        throw new chunkFZOLXGG6_cjs.ArvistError({ code: "shipment_not_found", message: "No inspection is open." });
+        throw new chunkLCGM55MY_cjs.ArvistError({ code: "shipment_not_found", message: "No inspection is open." });
       }
       setResolving(exception.key);
       setError(void 0);
@@ -561,7 +553,7 @@ function useExceptions(shipment, options = {}) {
         await applyResolution(client, shipment, args);
         await onResolvedRef.current?.();
       } catch (err) {
-        const normalized = chunkFZOLXGG6_cjs.ArvistError.is(err) ? err : new chunkFZOLXGG6_cjs.ArvistError({ code: "unknown", message: "Could not resolve.", cause: err });
+        const normalized = chunkLCGM55MY_cjs.ArvistError.is(err) ? err : new chunkLCGM55MY_cjs.ArvistError({ code: "unknown", message: "Could not resolve.", cause: err });
         setError(normalized);
         throw normalized;
       } finally {
@@ -586,7 +578,7 @@ async function applyResolution(client, shipment, args) {
   const action = resolution.action;
   if (action === "submit_identifiers") {
     if (!identifier?.trim()) {
-      throw new chunkFZOLXGG6_cjs.ArvistError({
+      throw new chunkLCGM55MY_cjs.ArvistError({
         code: "validation_failed",
         message: "Enter the pallet identifier before confirming."
       });
@@ -601,7 +593,7 @@ async function applyResolution(client, shipment, args) {
   }
   if (action === "cancel_unit") {
     if (!exception.unitId) {
-      throw new chunkFZOLXGG6_cjs.ArvistError({
+      throw new chunkLCGM55MY_cjs.ArvistError({
         code: "validation_failed",
         message: "This exception is not attached to a unit."
       });
@@ -609,10 +601,10 @@ async function applyResolution(client, shipment, args) {
     await client.cancelUnit(shipment.id, exception.unitId);
     return;
   }
-  const backendAction = chunkJFRZCX24_cjs.ISSUE_ACTION_BY_RESOLUTION[exception.type]?.[action];
+  const backendAction = chunkATH7QVWQ_cjs.ISSUE_ACTION_BY_RESOLUTION[exception.type]?.[action];
   if (backendAction) {
     if (!exception.issue) {
-      throw new chunkFZOLXGG6_cjs.ArvistError({
+      throw new chunkLCGM55MY_cjs.ArvistError({
         code: "validation_failed",
         message: "This exception has no issue row to resolve."
       });
@@ -639,7 +631,7 @@ async function applyResolution(client, shipment, args) {
 function buildIssueResolveInput(issueId, backendAction, issueMetadata, input) {
   const pinnedAnnotationId = issueMetadata?.["annotation_id"];
   const must = (value, message) => {
-    if (value == null) throw new chunkFZOLXGG6_cjs.ArvistError({ code: "validation_failed", message });
+    if (value == null) throw new chunkLCGM55MY_cjs.ArvistError({ code: "validation_failed", message });
     return value;
   };
   switch (backendAction) {
@@ -695,7 +687,7 @@ function buildIssueResolveInput(issueId, backendAction, issueMetadata, input) {
         corrected_quantity: must(input.quantity, "Enter the corrected quantity before confirming.")
       };
     default:
-      throw new chunkFZOLXGG6_cjs.ArvistError({ code: "unknown", message: `Unhandled issue action "${backendAction}".` });
+      throw new chunkLCGM55MY_cjs.ArvistError({ code: "unknown", message: `Unhandled issue action "${backendAction}".` });
   }
 }
 function useBarcodeScanner(options) {
@@ -713,10 +705,10 @@ function useBarcodeScanner(options) {
   React4__namespace.useEffect(() => {
     if (!enabled || typeof document === "undefined") return;
     const element = (target && "current" in target ? target.current : target) ?? document;
-    const buffer = chunkFZOLXGG6_cjs.createScanBuffer({
+    const buffer = chunkLCGM55MY_cjs.createScanBuffer({
       maxKeystrokeGapMs,
       minLength,
-      onScan: (code) => onScanRef.current(chunkFZOLXGG6_cjs.parseScan(code))
+      onScan: (code) => onScanRef.current(chunkLCGM55MY_cjs.parseScan(code))
     });
     const handler = (event) => {
       const keyEvent = event;
@@ -735,7 +727,7 @@ function useScanMatch(lineItems, options = {}) {
   const { onMatch, onUnmatched, ...scannerOptions } = options;
   const [lastScan, setLastScan] = React4__namespace.useState();
   const [matched, setMatched] = React4__namespace.useState();
-  const index = React4__namespace.useMemo(() => chunkFZOLXGG6_cjs.buildBarcodeIndex(lineItems), [lineItems]);
+  const index = React4__namespace.useMemo(() => chunkLCGM55MY_cjs.buildBarcodeIndex(lineItems), [lineItems]);
   const callbacks = React4__namespace.useRef({ onMatch, onUnmatched });
   callbacks.current = { onMatch, onUnmatched };
   useBarcodeScanner({
@@ -763,6 +755,7 @@ function isEditable(target) {
   const tag = target.tagName;
   return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || target.isContentEditable;
 }
+var MIN_REFRESH_INTERVAL_MS = 15e3;
 function useShipmentMedia(source, options = {}) {
   const { client } = useArvist();
   const autoRefresh = options.autoRefresh ?? true;
@@ -781,16 +774,17 @@ function useShipmentMedia(source, options = {}) {
     { enabled: shipmentId != null }
   );
   const images = React4__namespace.useMemo(() => result.data ?? [], [result.data]);
-  const items = React4__namespace.useMemo(() => chunkFZOLXGG6_cjs.sortMediaBySide(chunkFZOLXGG6_cjs.flattenMedia(images)), [images]);
+  const items = React4__namespace.useMemo(() => chunkLCGM55MY_cjs.sortMediaBySide(chunkLCGM55MY_cjs.flattenMedia(images)), [images]);
   const { refresh } = result;
   React4__namespace.useEffect(() => {
     if (!images.length) return;
     const check = () => {
-      const soonest = images.map((img) => chunkFZOLXGG6_cjs.getMediaExpiry(img.media, receivedAt.current)).filter((e) => e.msRemaining != null).sort((a, b) => (a.msRemaining ?? 0) - (b.msRemaining ?? 0))[0];
+      const soonest = images.map((img) => chunkLCGM55MY_cjs.getMediaExpiry(img.media, receivedAt.current)).filter((e) => e.msRemaining != null).sort((a, b) => (a.msRemaining ?? 0) - (b.msRemaining ?? 0))[0];
       if (!soonest) return;
       if (soonest.stale) {
         setStale(true);
-        if (autoRefresh) void refresh();
+        const sinceFetchMs = receivedAt.current ? Date.now() - receivedAt.current.getTime() : Infinity;
+        if (autoRefresh && sinceFetchMs >= MIN_REFRESH_INTERVAL_MS) void refresh();
       }
     };
     check();
@@ -809,147 +803,151 @@ function useShipmentMedia(source, options = {}) {
 
 Object.defineProperty(exports, "ArvistClient", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.ArvistClient; }
+  get: function () { return chunkLCGM55MY_cjs.ArvistClient; }
 });
 Object.defineProperty(exports, "ArvistError", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.ArvistError; }
+  get: function () { return chunkLCGM55MY_cjs.ArvistError; }
 });
 Object.defineProperty(exports, "DEFAULT_ERROR_MESSAGES", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.DEFAULT_ERROR_MESSAGES; }
+  get: function () { return chunkLCGM55MY_cjs.DEFAULT_ERROR_MESSAGES; }
 });
 Object.defineProperty(exports, "DEFAULT_PRESIGNED_TTL_MS", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.DEFAULT_PRESIGNED_TTL_MS; }
+  get: function () { return chunkLCGM55MY_cjs.DEFAULT_PRESIGNED_TTL_MS; }
 });
 Object.defineProperty(exports, "InspectionFeed", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.InspectionFeed; }
+  get: function () { return chunkLCGM55MY_cjs.InspectionFeed; }
 });
 Object.defineProperty(exports, "PRESIGN_REFRESH_MARGIN_MS", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.PRESIGN_REFRESH_MARGIN_MS; }
+  get: function () { return chunkLCGM55MY_cjs.PRESIGN_REFRESH_MARGIN_MS; }
 });
 Object.defineProperty(exports, "buildBarcodeIndex", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.buildBarcodeIndex; }
+  get: function () { return chunkLCGM55MY_cjs.buildBarcodeIndex; }
 });
 Object.defineProperty(exports, "checkCompletion", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.checkCompletion; }
+  get: function () { return chunkLCGM55MY_cjs.checkCompletion; }
 });
 Object.defineProperty(exports, "createErrorMessageResolver", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.createErrorMessageResolver; }
+  get: function () { return chunkLCGM55MY_cjs.createErrorMessageResolver; }
 });
 Object.defineProperty(exports, "createScanBuffer", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.createScanBuffer; }
+  get: function () { return chunkLCGM55MY_cjs.createScanBuffer; }
 });
 Object.defineProperty(exports, "createSocketIoTransport", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.createSocketIoTransport; }
+  get: function () { return chunkLCGM55MY_cjs.createSocketIoTransport; }
 });
 Object.defineProperty(exports, "errorFromResponse", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.errorFromResponse; }
+  get: function () { return chunkLCGM55MY_cjs.errorFromResponse; }
 });
 Object.defineProperty(exports, "flattenMedia", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.flattenMedia; }
+  get: function () { return chunkLCGM55MY_cjs.flattenMedia; }
 });
 Object.defineProperty(exports, "getDisplayMessage", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.getDisplayMessage; }
+  get: function () { return chunkLCGM55MY_cjs.getDisplayMessage; }
 });
 Object.defineProperty(exports, "getLineItemBarcode", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.getLineItemBarcode; }
+  get: function () { return chunkLCGM55MY_cjs.getLineItemBarcode; }
 });
 Object.defineProperty(exports, "getMediaExpiry", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.getMediaExpiry; }
+  get: function () { return chunkLCGM55MY_cjs.getMediaExpiry; }
 });
 Object.defineProperty(exports, "isMediaUrlExpired", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.isMediaUrlExpired; }
+  get: function () { return chunkLCGM55MY_cjs.isMediaUrlExpired; }
 });
 Object.defineProperty(exports, "normalizeBarcode", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.normalizeBarcode; }
+  get: function () { return chunkLCGM55MY_cjs.normalizeBarcode; }
 });
 Object.defineProperty(exports, "parsePresignedExpiry", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.parsePresignedExpiry; }
+  get: function () { return chunkLCGM55MY_cjs.parsePresignedExpiry; }
 });
 Object.defineProperty(exports, "parseScan", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.parseScan; }
+  get: function () { return chunkLCGM55MY_cjs.parseScan; }
 });
 Object.defineProperty(exports, "reconcile", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.reconcile; }
+  get: function () { return chunkLCGM55MY_cjs.reconcile; }
 });
 Object.defineProperty(exports, "sortMediaBySide", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.sortMediaBySide; }
+  get: function () { return chunkLCGM55MY_cjs.sortMediaBySide; }
 });
 Object.defineProperty(exports, "topics", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.topics; }
+  get: function () { return chunkLCGM55MY_cjs.topics; }
 });
 Object.defineProperty(exports, "upcCoverage", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.upcCoverage; }
+  get: function () { return chunkLCGM55MY_cjs.upcCoverage; }
 });
 Object.defineProperty(exports, "validateGtinCheckDigit", {
   enumerable: true,
-  get: function () { return chunkFZOLXGG6_cjs.validateGtinCheckDigit; }
+  get: function () { return chunkLCGM55MY_cjs.validateGtinCheckDigit; }
 });
 Object.defineProperty(exports, "DEFAULT_EXCEPTION_COPY", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.DEFAULT_EXCEPTION_COPY; }
+  get: function () { return chunkATH7QVWQ_cjs.DEFAULT_EXCEPTION_COPY; }
 });
 Object.defineProperty(exports, "ISSUE_ACTION_BY_RESOLUTION", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.ISSUE_ACTION_BY_RESOLUTION; }
+  get: function () { return chunkATH7QVWQ_cjs.ISSUE_ACTION_BY_RESOLUTION; }
 });
 Object.defineProperty(exports, "PALLET_ONLY_EXCEPTIONS", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.PALLET_ONLY_EXCEPTIONS; }
+  get: function () { return chunkATH7QVWQ_cjs.PALLET_ONLY_EXCEPTIONS; }
 });
 Object.defineProperty(exports, "SENTINEL_SKUS", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.SENTINEL_SKUS; }
+  get: function () { return chunkATH7QVWQ_cjs.SENTINEL_SKUS; }
 });
 Object.defineProperty(exports, "collectIssues", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.collectIssues; }
+  get: function () { return chunkATH7QVWQ_cjs.collectIssues; }
 });
 Object.defineProperty(exports, "deriveExceptions", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.deriveExceptions; }
+  get: function () { return chunkATH7QVWQ_cjs.deriveExceptions; }
 });
 Object.defineProperty(exports, "isExceptionOpen", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.isExceptionOpen; }
+  get: function () { return chunkATH7QVWQ_cjs.isExceptionOpen; }
 });
 Object.defineProperty(exports, "isSentinelLineItem", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.isSentinelLineItem; }
+  get: function () { return chunkATH7QVWQ_cjs.isSentinelLineItem; }
+});
+Object.defineProperty(exports, "mergeRealtimeCounts", {
+  enumerable: true,
+  get: function () { return chunkATH7QVWQ_cjs.mergeRealtimeCounts; }
 });
 Object.defineProperty(exports, "mergeRealtimeIssues", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.mergeRealtimeIssues; }
+  get: function () { return chunkATH7QVWQ_cjs.mergeRealtimeIssues; }
 });
 Object.defineProperty(exports, "orderedLineItems", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.orderedLineItems; }
+  get: function () { return chunkATH7QVWQ_cjs.orderedLineItems; }
 });
 Object.defineProperty(exports, "resolutionsFor", {
   enumerable: true,
-  get: function () { return chunkJFRZCX24_cjs.resolutionsFor; }
+  get: function () { return chunkATH7QVWQ_cjs.resolutionsFor; }
 });
 exports.ArvistProvider = ArvistProvider;
 exports.useArvist = useArvist;

@@ -92,28 +92,34 @@ export function isMediaUrlExpired(media: Pick<MediaRef, 'url' | 'expires_at'> | 
 }
 
 export interface FlatMediaItem {
-  id: number;
+  id: number | string;
   side: string;
   url?: string;
   filename?: string;
   contentId?: string;
   mimeType?: string;
-  unitSessionId: number;
+  unitSessionId?: number;
   damageCount: number;
 }
 
 /** Flattens the nested image structure into a list a gallery can render. */
 export function flattenMedia(images: ShipmentImage[] | undefined): FlatMediaItem[] {
-  return (images ?? []).map(image => ({
-    id: image.id,
-    side: String(image.side),
-    url: image.media?.url,
-    filename: image.media?.filename ?? image.filepath,
-    contentId: image.media?.content_id,
-    mimeType: image.media?.mime_type,
-    unitSessionId: image.shipment_unit_session_id,
-    damageCount: image.damages?.length ?? 0,
-  }));
+  return (images ?? []).map((image, index) => {
+    const media = image.media;
+    const file = media?.content?.image ?? media?.content?.video;
+    const resolvedId = image.id ?? media?.id ?? file?.id ?? index;
+    const resolvedContentId = media?.content_id ?? (media?.id != null ? String(media.id) : undefined) ?? (file?.id != null ? String(file.id) : undefined);
+    return {
+      id: resolvedId,
+      side: String(image.side),
+      url: media?.url,
+      filename: media?.filename ?? file?.filename ?? image.filepath,
+      contentId: resolvedContentId,
+      mimeType: media?.mime_type ?? file?.content_type,
+      unitSessionId: image.shipment_unit_session_id,
+      damageCount: image.damages?.length ?? 0,
+    };
+  });
 }
 
 const SIDE_ORDER = ['front', 'front_low', 'front_high', 'right', 'right_low', 'right_high', 'back', 'left', 'left_low', 'left_high', 'top', 'all'];

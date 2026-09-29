@@ -28,15 +28,7 @@
  * one normalised list with resolution paths already attached.
  */
 
-import {
-  SENTINEL_SKUS,
-  type IssueStatus,
-  type IssueType,
-  type LineItem,
-  type Shipment,
-  type ShipmentIssue,
-  type ShipmentUnitType,
-} from './types';
+import { SENTINEL_SKUS, type IssueStatus, type IssueType, type LineItem, type Shipment, type ShipmentIssue, type ShipmentUnitType } from './types';
 
 // ---------------------------------------------------------------------------
 // Taxonomy
@@ -143,9 +135,7 @@ const ISSUE_TO_EXCEPTION: Record<IssueType, ExceptionType> = {
  * `missing_identifiers` resolve through the older status write instead, and
  * are absent on purpose.
  */
-export const ISSUE_ACTION_BY_RESOLUTION: Partial<
-  Record<ExceptionType, Partial<Record<ResolutionAction, string>>>
-> = {
+export const ISSUE_ACTION_BY_RESOLUTION: Partial<Record<ExceptionType, Partial<Record<ResolutionAction, string>>>> = {
   unidentified_product: {
     identify_product: 'assign',
     remove_item: 'remove_product',
@@ -285,27 +275,15 @@ export function resolutionsFor(type: ExceptionType, copy: ExceptionCopy): Resolu
     case 'overage':
       // No "just accept it" action — an overage closes either by physically
       // removing the extra or by reattributing a detection to another sku.
-      return [
-        opt('remove_item', copy, { status: 'resolved', requiresPhysicalAction: true }),
-        opt('reassign_product', copy, { status: 'false_positive' }),
-      ];
+      return [opt('remove_item', copy, { status: 'resolved', requiresPhysicalAction: true }), opt('reassign_product', copy, { status: 'false_positive' })];
     case 'shortage':
-      return [
-        opt('locate_stock', copy, { status: 'resolved', requiresPhysicalAction: true }),
-        opt('correct_count', copy, { status: 'false_positive' }),
-      ];
+      return [opt('locate_stock', copy, { status: 'resolved', requiresPhysicalAction: true }), opt('correct_count', copy, { status: 'false_positive' })];
     case 'manual_count_correction':
       return [opt('acknowledge', copy, { status: 'resolved' })];
     case 'wrong_load':
-      return [
-        opt('redirect_load', copy, { status: 'resolved', requiresPhysicalAction: true }),
-        opt('cancel_unit', copy, { status: 'canceled' }),
-      ];
+      return [opt('redirect_load', copy, { status: 'resolved', requiresPhysicalAction: true }), opt('cancel_unit', copy, { status: 'canceled' })];
     case 'missing_identifiers':
-      return [
-        opt('submit_identifiers', copy, { status: 'resolved' }),
-        opt('mark_unresolved', copy, { status: 'unresolved', requiresReason: true }),
-      ];
+      return [opt('submit_identifiers', copy, { status: 'resolved' }), opt('mark_unresolved', copy, { status: 'unresolved', requiresReason: true })];
     case 'unit_removed':
       return [opt('acknowledge', copy, { status: 'resolved' })];
     case 'damage':
@@ -348,7 +326,7 @@ export function isSentinelLineItem(item: LineItem): boolean {
 
 /** Real order lines only — what you reconcile expected vs actual against. */
 export function orderedLineItems(items: LineItem[] | undefined): LineItem[] {
-  return (items ?? []).filter((i) => !isSentinelLineItem(i));
+  return (items ?? []).filter(i => !isSentinelLineItem(i));
 }
 
 function lineItemKey(item: LineItem, suffix: string): string {
@@ -356,7 +334,7 @@ function lineItemKey(item: LineItem, suffix: string): string {
 }
 
 function inferUnitType(shipment: Pick<Shipment, 'units'> | undefined): ShipmentUnitType {
-  const unitTypes = (shipment?.units ?? []).map((u) => u.type).filter(Boolean);
+  const unitTypes = (shipment?.units ?? []).map(u => u.type).filter(Boolean);
   return unitTypes.includes('pallet') ? 'pallet' : 'product';
 }
 
@@ -401,10 +379,7 @@ export function collectIssues(shipment: Pick<Shipment, 'units'> | undefined): Sh
  * Pass the shipment exactly as the API returned it. Realtime unit payloads can
  * be merged in first with {@link mergeRealtimeIssues}.
  */
-export function deriveExceptions(
-  shipment: Pick<Shipment, 'line_items' | 'units' | 'status'> | undefined,
-  options: DeriveOptions = {},
-): NormalizedException[] {
+export function deriveExceptions(shipment: Pick<Shipment, 'line_items' | 'units' | 'status'> | undefined, options: DeriveOptions = {}): NormalizedException[] {
   if (!shipment) return [];
 
   const copy = options.copy ?? DEFAULT_EXCEPTION_COPY;
@@ -423,9 +398,7 @@ export function deriveExceptions(
    * so the quantity is folded into the issue-backed exception and the sentinel
    * row is not reported again.
    */
-  const unknownRow = (shipment.line_items ?? []).find(
-    (i) => i.sku?.toLowerCase().trim() === 'unknown' && (i.actual_quantity ?? 0) > 0,
-  );
+  const unknownRow = (shipment.line_items ?? []).find(i => i.sku?.toLowerCase().trim() === 'unknown' && (i.actual_quantity ?? 0) > 0);
 
   // 1. Stored issue rows -----------------------------------------------------
   for (const issue of collectIssues(shipment)) {
@@ -436,8 +409,7 @@ export function deriveExceptions(
     // A wrong_load closed by cancelling the unit is reported as its own
     // exception — the unit left the inspection, which downstream systems need
     // to see even though the load issue itself is closed.
-    const resolvedType: ExceptionType =
-      type === 'wrong_load' && issue.status === 'canceled' ? 'unit_removed' : type;
+    const resolvedType: ExceptionType = type === 'wrong_load' && issue.status === 'canceled' ? 'unit_removed' : type;
 
     const mergesUnknownRow = resolvedType === 'unidentified_product' && unknownRow !== undefined;
     const quantity = mergesUnknownRow ? (unknownRow!.actual_quantity ?? 0) : undefined;
@@ -448,9 +420,7 @@ export function deriveExceptions(
       status: issue.status,
       severity: severityFor(resolvedType, issue.status),
       title: copy.titles[resolvedType],
-      description: quantity
-        ? `${quantity} item(s) could not be identified.`
-        : describeIssue(resolvedType, issue),
+      description: quantity ? `${quantity} item(s) could not be identified.` : describeIssue(resolvedType, issue),
       resolutions: resolutionsFor(resolvedType, copy),
       blocksCompletion: false,
       issue,
@@ -490,8 +460,7 @@ export function deriveExceptions(
         status: storedIssue.status,
         severity: !open ? 'info' : blocks ? 'blocking' : 'warning',
         title: copy.titles[type],
-        description: `${item.name || item.sku}: expected ${expected}, counted ${actual} ` +
-          `(${delta > 0 ? '+' : ''}${delta}).`,
+        description: `${item.name || item.sku}: expected ${expected}, counted ${actual} ` + `(${delta > 0 ? '+' : ''}${delta}).`,
         resolutions: resolutionsFor(type, copy),
         blocksCompletion: blocks,
         issue: storedIssue,
@@ -554,8 +523,15 @@ function describeIssue(type: ExceptionType, issue: ShipmentIssue): string {
 
 const SEVERITY_ORDER: Record<ExceptionSeverity, number> = { blocking: 0, warning: 1, info: 2 };
 const TYPE_ORDER: ExceptionType[] = [
-  'shortage', 'wrong_product', 'unidentified_product', 'wrong_load',
-  'missing_identifiers', 'overage', 'damage', 'unit_removed', 'manual_count_correction',
+  'shortage',
+  'wrong_product',
+  'unidentified_product',
+  'wrong_load',
+  'missing_identifiers',
+  'overage',
+  'damage',
+  'unit_removed',
+  'manual_count_correction',
 ];
 
 function bySeverityThenType(a: NormalizedException, b: NormalizedException): number {
@@ -571,37 +547,84 @@ function bySeverityThenType(a: NormalizedException, b: NormalizedException): num
 // ---------------------------------------------------------------------------
 
 /**
+ * `unit-completed` payloads carry a `products` array with the authoritative
+ * per-line-item counts *at the moment the unit finished* — the API computes
+ * and emits this before the corresponding `GET /shipment/:id` is guaranteed
+ * to reflect it (the write and the emit can race the read path). Folding
+ * these counts in immediately, rather than waiting on the refetch `refresh()`
+ * triggers, avoids showing stale counts when that GET response lands first
+ * but is behind the event that caused it.
+ *
+ * Matched by `sku` first, falling back to `product_id`, since either may be
+ * absent/inconsistent depending on the integration. Counts never regress: if
+ * the shipment already reflects a higher `actual_quantity` than the payload
+ * (e.g. a later event's refetch already landed, or a manual correction was
+ * applied locally) the higher value wins, so an out-of-order/stale event
+ * can't undo a more advanced state.
+ */
+export function mergeRealtimeCounts<T extends Pick<Shipment, 'line_items'>>(shipment: T, update: { products?: unknown[] }): T {
+  if (!update.products?.length) return shipment;
+
+  const bySku = new Map<string, Record<string, unknown>>();
+  const byProductId = new Map<string, Record<string, unknown>>();
+  for (const raw of update.products) {
+    if (!raw || typeof raw !== 'object') continue;
+    const p = raw as Record<string, unknown>;
+    if (typeof p.sku === 'string') bySku.set(p.sku, p);
+    if (p.product_id != null) byProductId.set(String(p.product_id), p);
+  }
+  if (!bySku.size && !byProductId.size) return shipment;
+
+  let changed = false;
+  const line_items = shipment.line_items.map(item => {
+    const match = bySku.get(item.sku) ?? byProductId.get(String(item.product_id));
+    if (!match) return item;
+    const actual = match.actual_quantity;
+    if (typeof actual !== 'number') return item;
+    const nextActual = Math.max(item.actual_quantity, actual);
+    if (nextActual === item.actual_quantity && match.is_edited === item.is_edited) return item;
+    changed = true;
+    return {
+      ...item,
+      actual_quantity: nextActual,
+      is_edited: typeof match.is_edited === 'boolean' ? match.is_edited : item.is_edited,
+    };
+  });
+
+  return changed ? { ...shipment, line_items } : shipment;
+}
+
+/**
  * Realtime unit payloads carry issues keyed `type` rather than `issue_type`,
  * and without ids. This folds them into a shipment so a single
  * {@link deriveExceptions} call covers both sources.
  */
-export function mergeRealtimeIssues<T extends Pick<Shipment, 'units'>>(
-  shipment: T,
-  update: { unit_id?: string; unit_session_id?: number; issues?: unknown[] },
-): T {
+export function mergeRealtimeIssues<T extends Pick<Shipment, 'units'>>(shipment: T, update: { unit_id?: string; unit_session_id?: number; issues?: unknown[] }): T {
   if (!update.issues?.length || !update.unit_id) return shipment;
 
-  const incoming: ShipmentIssue[] = update.issues.flatMap((raw) => {
+  const incoming: ShipmentIssue[] = update.issues.flatMap(raw => {
     if (!raw || typeof raw !== 'object') return [];
     const r = raw as Record<string, unknown>;
     const issueType = (r.issue_type ?? r.type) as IssueType | undefined;
     if (!issueType) return [];
-    return [{
-      id: typeof r.id === 'number' ? r.id : -1,
-      issue_type: issueType,
-      status: (r.status as IssueStatus) ?? 'open',
-      description: typeof r.description === 'string' ? r.description : undefined,
-      metadata: (r.metadata as Record<string, unknown>) ?? undefined,
-      created_at: (r.created_at as string) ?? new Date().toISOString(),
-      updated_at: (r.updated_at as string) ?? new Date().toISOString(),
-      unit_id: update.unit_id,
-      unit_session_id: update.unit_session_id,
-    }];
+    return [
+      {
+        id: typeof r.id === 'number' ? r.id : -1,
+        issue_type: issueType,
+        status: (r.status as IssueStatus) ?? 'open',
+        description: typeof r.description === 'string' ? r.description : undefined,
+        metadata: (r.metadata as Record<string, unknown>) ?? undefined,
+        created_at: (r.created_at as string) ?? new Date().toISOString(),
+        updated_at: (r.updated_at as string) ?? new Date().toISOString(),
+        unit_id: update.unit_id,
+        unit_session_id: update.unit_session_id,
+      },
+    ];
   });
 
   if (!incoming.length) return shipment;
 
-  const units = (shipment.units ?? []).map((unit) => {
+  const units = (shipment.units ?? []).map(unit => {
     if (unit.id !== update.unit_id) return unit;
     const [current, ...rest] = unit.quality_sessions ?? [];
     const session = current ?? {
@@ -615,9 +638,7 @@ export function mergeRealtimeIssues<T extends Pick<Shipment, 'units'>>(
     // instance, it does not append to it. Keyed the same way `collectIssues`
     // dedupes, so a per-instance type (`unidentified_product`/`wrong_product`)
     // can carry several rows here without one overwriting another.
-    const byInstance = new Map(
-      (session.issues ?? []).map((i) => [issueInstanceKey(i), i] as const),
-    );
+    const byInstance = new Map((session.issues ?? []).map(i => [issueInstanceKey(i), i] as const));
     for (const i of incoming) byInstance.set(issueInstanceKey(i), i);
     return {
       ...unit,

@@ -26,20 +26,20 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
 
   // Poll the binding so a station that drops out of configuration is caught
   // before the next tote arrives rather than after it goes missing.
-  const binding = useStationBinding(STATION_NAME, { pollMs: 30_000 });
+  const binding = useStationBinding(STATION_NAME);
 
   const inspection = useInspection({
     areaName: STATION_NAME,
     areaId: binding.station?.area_id,
-    onCompleted: (shipment, reconciliation) => {
-      // The reconciliation point. Counts before this are provisional.
-      console.info('[completed]', shipment.shipment_key, reconciliation.totals);
-    },
   });
 
-  const exceptions = useExceptions(inspection.shipment, { onResolved: inspection.refresh });
+  const exceptions = useExceptions(inspection.shipment, {
+    onResolved: () => {
+      void inspection.refresh();
+    },
+  });
   // Pass the shipment, not the id — media arrives unit by unit.
-  const media = useShipmentMedia(inspection.shipment);
+  const media = useShipmentMedia(inspection.shipment, { autoRefresh: false });
 
   const [toast, setToast] = useState<string | null>(null);
   const [log, setLog] = useState<string[]>([]);
@@ -69,6 +69,10 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
     try {
       await inspection.finish();
       await inspection.submit();
+      // Back to idle so the next tote scan starts a fresh inspection instead
+      // of showing this one's now-final counts/media until something else
+      // happens to clear them.
+      inspection.clear();
     } catch (err) {
       setToast(getDisplayMessage(err, resolveErrorMessage));
     }
@@ -154,7 +158,7 @@ export function PackStation({ backend, live, autoCompleted, onAutoCompletedChang
         {media.items.length > 0 ? (
           <section className='space-y-2'>
             <h2 className='text-sm font-semibold uppercase tracking-wide text-arvist-text-muted'>Capture</h2>
-            <MediaGallery items={media.items} stale={media.stale} onRefresh={media.refresh} />
+            <MediaGallery items={media.items} />
           </section>
         ) : null}
 

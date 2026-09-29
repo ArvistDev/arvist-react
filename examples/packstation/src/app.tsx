@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ArvistProvider, type ArvistClientConfig } from '@arvist/react';
+import { ArvistProvider, type ArvistClientConfig, type ArvistRealtimeConfig } from '@arvist/react';
 import { createMockBackend } from './mock/backend';
 import { PackStation } from './pack-station';
 import { io } from 'socket.io-client';
@@ -41,7 +41,18 @@ export function App() {
     [liveUrl, backend],
   );
 
-  const realtime = useMemo(() => (liveUrl ? undefined : { transport: backend.transport, io, url: liveUrl }), [liveUrl, backend]);
+  const realtime = useMemo<ArvistRealtimeConfig>(
+    () =>
+      liveUrl
+        ? {
+            io,
+            url: liveUrl,
+            withCredentials: true,
+            auth: import.meta.env.VITE_ARVIST_TOKEN ? { token: import.meta.env.VITE_ARVIST_TOKEN as string } : undefined,
+          }
+        : { transport: backend.transport },
+    [liveUrl, backend],
+  );
 
   return (
     <ArvistProvider

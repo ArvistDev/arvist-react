@@ -6,6 +6,15 @@ import type { Shipment, ShipmentImage } from '../../core/types';
 import { useArvist } from '../provider';
 import { useAsync } from './use-async';
 
+/**
+ * Floor between one auto-refresh and the next.
+ *
+ * A presigned URL that is already stale (or immediately re-flagged stale) the
+ * moment it arrives — a short-lived signature, clock skew — would otherwise
+ * retrigger `refresh()` every render, hammering the API in a tight loop.
+ */
+const MIN_REFRESH_INTERVAL_MS = 15_000;
+
 export interface UseShipmentMediaResult {
   images: ShipmentImage[];
   /** Flattened and ordered the way an operator walks a unit. */
@@ -70,7 +79,13 @@ export function useShipmentMedia(source: number | Pick<Shipment, 'id' | 'units'>
       if (!soonest) return;
       if (soonest.stale) {
         setStale(true);
-        if (autoRefresh) void refresh();
+        // Guard against a refetch loop: if the URL we just received is
+        // already (or immediately) stale — a short-lived presigned URL, or
+        // clock skew — retrying on every render would hammer the API in a
+        // tight loop. Only auto-refresh once we're meaningfully past the
+        // fetch that produced this data.
+        const sinceFetchMs = receivedAt.current ? Date.now() - receivedAt.current.getTime() : Infinity;
+        if (autoRefresh && sinceFetchMs >= MIN_REFRESH_INTERVAL_MS) void refresh();
       }
     };
 

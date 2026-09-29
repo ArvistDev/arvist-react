@@ -33,15 +33,19 @@ npm run dev
 
 The **Simulate** panel stands in for the upstream system and the floor:
 
-| Button | What it does |
-|---|---|
+| Button    | What it does                                                    |
+| --------- | --------------------------------------------------------------- |
 | Scan tote | Calls Start Shipment Processing, as an upstream tote scan would |
-| Next unit | Completes one unit, advancing the scripted scenario |
-| Reset | Clears the shipment |
+| Next unit | Completes one unit, advancing the scripted scenario             |
+| Reset     | Clears the shipment                                             |
 
 The scenario walks through every exception family in four units — a clean unit,
 an unidentified item, an off-order item plus damage, and finally a shortage that
 blocks completion until it is resolved or corrected.
+
+Completing an inspection (finish + submit) clears the local shipment
+afterwards, so the screen goes back to idle and is ready for the next tote scan
+rather than continuing to show the just-finished one's counts and media.
 
 Toggle **Shipment auto-completed upstream** to see the shortage stop blocking,
 which is the behaviour you want when a box-closure scan closes the shipment out
@@ -52,9 +56,18 @@ on screen, no focused field required.
 
 ## Against a real deployment
 
-Copy `.env.example` to `.env` and set `VITE_ARVIST_URL`. Nothing in the app
-changes: the mock is swapped out at the provider, and every component and hook
-below it is untouched.
+Copy `.env.example` to `.env` and set `VITE_ARVIST_URL` (plus the Cloudflare
+Access pair, if applicable). Nothing in the app changes: the mock is swapped
+out at the provider, and every component and hook below it is untouched.
+
+`VITE_ARVIST_URL` does double duty:
+
+- The realtime client connects to it directly (`app.tsx`'s `realtime` config).
+- `vite.config.ts` reads it too, to proxy `/v1/api` to that same deployment —
+  the REST client itself only ever calls `window.location.origin`, so no real
+  URL is hardcoded in a file that's tracked in git. Only `.env`/`.env.local`
+  (gitignored) should ever contain it; don't put it directly in
+  `vite.config.ts`.
 
 Behind Cloudflare Access, set the service-token pair as well. The two auth
 layers are independent — Access authenticates the device at the edge, the bearer

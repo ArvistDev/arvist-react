@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * @arvist/react
  * Copyright (c) 2026 Arvist, Inc.
@@ -287,6 +285,34 @@ function bySeverityThenType(a, b) {
   if (sev !== 0) return sev;
   return TYPE_ORDER.indexOf(a.type) - TYPE_ORDER.indexOf(b.type);
 }
+function mergeRealtimeCounts(shipment, update) {
+  if (!update.products?.length) return shipment;
+  const bySku = /* @__PURE__ */ new Map();
+  const byProductId = /* @__PURE__ */ new Map();
+  for (const raw of update.products) {
+    if (!raw || typeof raw !== "object") continue;
+    const p = raw;
+    if (typeof p.sku === "string") bySku.set(p.sku, p);
+    if (p.product_id != null) byProductId.set(String(p.product_id), p);
+  }
+  if (!bySku.size && !byProductId.size) return shipment;
+  let changed = false;
+  const line_items = shipment.line_items.map((item) => {
+    const match = bySku.get(item.sku) ?? byProductId.get(String(item.product_id));
+    if (!match) return item;
+    const actual = match.actual_quantity;
+    if (typeof actual !== "number") return item;
+    const nextActual = Math.max(item.actual_quantity, actual);
+    if (nextActual === item.actual_quantity && match.is_edited === item.is_edited) return item;
+    changed = true;
+    return {
+      ...item,
+      actual_quantity: nextActual,
+      is_edited: typeof match.is_edited === "boolean" ? match.is_edited : item.is_edited
+    };
+  });
+  return changed ? { ...shipment, line_items } : shipment;
+}
 function mergeRealtimeIssues(shipment, update) {
   if (!update.issues?.length || !update.unit_id) return shipment;
   const incoming = update.issues.flatMap((raw) => {
@@ -329,16 +355,6 @@ function mergeRealtimeIssues(shipment, update) {
   return { ...shipment, units };
 }
 
-exports.DEFAULT_EXCEPTION_COPY = DEFAULT_EXCEPTION_COPY;
-exports.ISSUE_ACTION_BY_RESOLUTION = ISSUE_ACTION_BY_RESOLUTION;
-exports.PALLET_ONLY_EXCEPTIONS = PALLET_ONLY_EXCEPTIONS;
-exports.SENTINEL_SKUS = SENTINEL_SKUS;
-exports.collectIssues = collectIssues;
-exports.deriveExceptions = deriveExceptions;
-exports.isExceptionOpen = isExceptionOpen;
-exports.isSentinelLineItem = isSentinelLineItem;
-exports.mergeRealtimeIssues = mergeRealtimeIssues;
-exports.orderedLineItems = orderedLineItems;
-exports.resolutionsFor = resolutionsFor;
-//# sourceMappingURL=chunk-JFRZCX24.cjs.map
-//# sourceMappingURL=chunk-JFRZCX24.cjs.map
+export { DEFAULT_EXCEPTION_COPY, ISSUE_ACTION_BY_RESOLUTION, PALLET_ONLY_EXCEPTIONS, SENTINEL_SKUS, collectIssues, deriveExceptions, isExceptionOpen, isSentinelLineItem, mergeRealtimeCounts, mergeRealtimeIssues, orderedLineItems, resolutionsFor };
+//# sourceMappingURL=chunk-YDYT2QTR.js.map
+//# sourceMappingURL=chunk-YDYT2QTR.js.map

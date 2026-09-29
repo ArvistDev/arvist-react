@@ -1,5 +1,5 @@
-import { A as ArvistError, Q as QualityStation, G as ListShipmentsQuery, O as Paginated, S as Shipment, a0 as ShipmentDetail, c as StartInspectionInput, l as ActionResult, ab as SubmitInspectionInput, a1 as ShipmentIssue, Y as ResolveIssueInput, X as ResolveIssueByIdInput, ad as UpdateUnknownProductInput, k as ShipmentImage, h as ArvistErrorCode } from './media-DnQFgvEV.cjs';
-export { m as ArvistErrorInit, a as CompletionCheck, C as ConnectionState, D as DEFAULT_ERROR_MESSAGES, n as DEFAULT_EXCEPTION_COPY, o as DEFAULT_PRESIGNED_TTL_MS, p as DeriveOptions, q as DetectionAnnotation, E as ErrorMessageResolver, e as ExceptionCopy, r as ExceptionSeverity, j as ExceptionType, s as FeedBinding, F as FlatMediaItem, t as ISSUE_ACTION_BY_RESOLUTION, I as InspectionEvent, u as InspectionEventKind, d as InspectionFeed, v as InspectionFeedOptions, w as IssueResolveAction, x as IssueStatus, y as IssueType, b as LineItem, L as LineItemCorrection, z as LineItemInput, B as LineVariance, M as MediaExpiry, H as MediaRef, N as NormalizedException, J as PALLET_ONLY_EXCEPTIONS, K as PRESIGN_REFRESH_MARGIN_MS, P as PartialExceptionCopy, T as QualityStationType, U as RealtimeIssue, g as RealtimeTransport, V as ReconciledLine, R as Reconciliation, W as ResolutionAction, i as ResolutionOption, Z as SENTINEL_SKUS, _ as SentinelSku, $ as ShipmentDamage, a2 as ShipmentPalletIdentifier, a3 as ShipmentSide, a4 as ShipmentStatus, a5 as ShipmentType, a6 as ShipmentUnit, a7 as ShipmentUnitSession, a8 as ShipmentUnitType, f as SocketIoFactory, a9 as SocketIoTransportConfig, aa as SocketLike, ac as UnitPayload, ae as buildBarcodeIndex, af as checkCompletion, ag as collectIssues, ah as createErrorMessageResolver, ai as createSocketIoTransport, aj as deriveExceptions, ak as errorFromResponse, al as flattenMedia, am as getDisplayMessage, an as getLineItemBarcode, ao as getMediaExpiry, ap as isExceptionOpen, aq as isMediaUrlExpired, ar as isSentinelLineItem, as as mergeRealtimeIssues, at as normalizeBarcode, au as orderedLineItems, av as parsePresignedExpiry, aw as reconcile, ax as resolutionsFor, ay as sortMediaBySide, az as topics, aA as upcCoverage } from './media-DnQFgvEV.cjs';
+import { A as ArvistError, Q as QualityStation, G as ListShipmentsQuery, T as Paginated, S as Shipment, a1 as ShipmentDetail, c as StartInspectionInput, l as ActionResult, ac as SubmitInspectionInput, a2 as ShipmentIssue, Z as ResolveIssueInput, Y as ResolveIssueByIdInput, ae as UpdateUnknownProductInput, k as ShipmentImage, h as ArvistErrorCode } from './media-BsUi-D5-.cjs';
+export { m as ArvistErrorInit, a as CompletionCheck, C as ConnectionState, D as DEFAULT_ERROR_MESSAGES, n as DEFAULT_EXCEPTION_COPY, o as DEFAULT_PRESIGNED_TTL_MS, p as DeriveOptions, q as DetectionAnnotation, E as ErrorMessageResolver, e as ExceptionCopy, r as ExceptionSeverity, j as ExceptionType, s as FeedBinding, F as FlatMediaItem, t as ISSUE_ACTION_BY_RESOLUTION, I as InspectionEvent, u as InspectionEventKind, d as InspectionFeed, v as InspectionFeedOptions, w as IssueResolveAction, x as IssueStatus, y as IssueType, b as LineItem, L as LineItemCorrection, z as LineItemInput, B as LineVariance, M as MediaContentFile, H as MediaExpiry, J as MediaRef, N as NormalizedException, K as PALLET_ONLY_EXCEPTIONS, O as PRESIGN_REFRESH_MARGIN_MS, P as PartialExceptionCopy, U as QualityStationType, V as RealtimeIssue, g as RealtimeTransport, W as ReconciledLine, R as Reconciliation, X as ResolutionAction, i as ResolutionOption, _ as SENTINEL_SKUS, $ as SentinelSku, a0 as ShipmentDamage, a3 as ShipmentPalletIdentifier, a4 as ShipmentSide, a5 as ShipmentStatus, a6 as ShipmentType, a7 as ShipmentUnit, a8 as ShipmentUnitSession, a9 as ShipmentUnitType, f as SocketIoFactory, aa as SocketIoTransportConfig, ab as SocketLike, ad as UnitPayload, af as buildBarcodeIndex, ag as checkCompletion, ah as collectIssues, ai as createErrorMessageResolver, aj as createSocketIoTransport, ak as deriveExceptions, al as errorFromResponse, am as flattenMedia, an as getDisplayMessage, ao as getLineItemBarcode, ap as getMediaExpiry, aq as isExceptionOpen, ar as isMediaUrlExpired, as as isSentinelLineItem, at as mergeRealtimeCounts, au as mergeRealtimeIssues, av as normalizeBarcode, aw as orderedLineItems, ax as parsePresignedExpiry, ay as reconcile, az as resolutionsFor, aA as sortMediaBySide, aB as topics, aC as upcCoverage } from './media-BsUi-D5-.cjs';
 
 /**
  * REST client for the Arvist API.
@@ -165,10 +165,25 @@ declare class ArvistClient {
      *
      * The URLs are short-lived — copy anything you need to retain to your own
      * storage on receipt rather than storing the URL.
+     *
+     * Some deployments return each image's `media` without a ready `url` —
+     * just a storage `key`/`content_id` — and expect a separate presign call,
+     * the same way video clips work. When that happens this resolves them all
+     * in parallel before returning, so callers never have to special-case it.
      */
     getShipmentMedia(shipmentId: number, opts?: RequestOptions): Promise<ShipmentImage[]>;
     /** Presigned URL for a captured video clip. */
     getVideoUrl(contentId: string, opts?: RequestOptions): Promise<{
+        url: string;
+    }>;
+    /**
+     * Presigned URL for a captured image.
+     *
+     * Needed only on deployments where {@link ShipmentImage.media} comes back
+     * with a `content_id`/`key` but no `url` — {@link getShipmentMedia} calls
+     * this for you in that case, so most integrations never need it directly.
+     */
+    getImageUrl(contentId: string, opts?: RequestOptions): Promise<{
         url: string;
     }>;
     /**

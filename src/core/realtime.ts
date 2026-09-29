@@ -97,9 +97,7 @@ export function createSocketIoTransport(config: SocketIoTransportConfig): Realti
       });
       socket.on('connect', () => setState('connected'));
       socket.on('disconnect', () => setState('reconnecting'));
-      socket.on('connect_error', (err: unknown) =>
-        setState('reconnecting', err instanceof Error ? err : new Error(String(err))),
-      );
+      socket.on('connect_error', (err: unknown) => setState('reconnecting', err instanceof Error ? err : new Error(String(err))));
       for (const topic of topicHandlers.keys()) bind(topic);
     },
     close() {
@@ -180,6 +178,8 @@ export interface UnitPayload {
   increment_by?: number;
   images?: unknown[];
   issues?: RealtimeIssue[];
+  /** Authoritative per-line-item counts as of this unit. See `mergeRealtimeCounts`. */
+  products?: unknown[];
   identifiers?: { order_numbers?: string[]; total_pallets?: number; [k: string]: unknown };
   [k: string]: unknown;
 }
@@ -342,11 +342,7 @@ export class InspectionFeed {
 
 const CANCEL_STATUSES = new Set(['canceled', 'cancelled', 'deleted']);
 
-function normalize(
-  kind: InspectionEventKind | 'update',
-  raw: unknown,
-  topic: string,
-): InspectionEvent | null {
+function normalize(kind: InspectionEventKind | 'update', raw: unknown, topic: string): InspectionEvent | null {
   const payload = (raw ?? {}) as Record<string, unknown>;
 
   switch (kind) {
@@ -371,9 +367,7 @@ function normalize(
       return { kind: 'unit-processing', payload: payload as UnitPayload, raw };
 
     case 'unit-completed': {
-      const issues = Array.isArray(payload['issues'])
-        ? (payload['issues'] as RealtimeIssue[])
-        : [];
+      const issues = Array.isArray(payload['issues']) ? (payload['issues'] as RealtimeIssue[]) : [];
       return { kind: 'unit-completed', payload: payload as UnitPayload, issues, raw };
     }
 

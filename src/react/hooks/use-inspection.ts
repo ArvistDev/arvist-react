@@ -2,27 +2,13 @@
 
 import * as React from 'react';
 import { ArvistError } from '../../core/errors';
-import { mergeRealtimeIssues } from '../../core/exceptions';
+import { mergeRealtimeCounts, mergeRealtimeIssues } from '../../core/exceptions';
 import type { ConnectionState, InspectionEvent } from '../../core/realtime';
 import { checkCompletion, reconcile, type CompletionCheck, type Reconciliation } from '../../core/reconcile';
-import type {
-  ActionResult,
-  LineItem,
-  LineItemCorrection,
-  Shipment,
-  StartInspectionInput,
-} from '../../core/types';
+import type { ActionResult, LineItem, LineItemCorrection, Shipment, StartInspectionInput } from '../../core/types';
 import { useArvist } from '../provider';
 
-export type InspectionPhase =
-  | 'idle'
-  | 'starting'
-  | 'in_progress'
-  | 'paused'
-  | 'review'
-  | 'completed'
-  | 'canceled'
-  | 'error';
+export type InspectionPhase = 'idle' | 'starting' | 'in_progress' | 'paused' | 'review' | 'completed' | 'canceled' | 'error';
 
 export interface UseInspectionOptions {
   /**
@@ -152,10 +138,10 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
     let cancelled = false;
     client
       .findStationByName(areaName)
-      .then((station) => {
+      .then(station => {
         if (!cancelled) setResolvedAreaId(station.area_id);
       })
-      .catch((err) => {
+      .catch(err => {
         if (!cancelled && ArvistError.is(err)) setError(err);
       });
     return () => {
@@ -171,12 +157,12 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
     setLoading(true);
     client
       .getShipment(explicitShipmentId)
-      .then((s) => {
+      .then(s => {
         if (cancelled) return;
         setShipment(s);
         setPhase(phaseFromStatus(s.status));
       })
-      .catch((err) => !cancelled && setError(toArvistError(err)))
+      .catch(err => !cancelled && setError(toArvistError(err)))
       .finally(() => !cancelled && setLoading(false));
     return () => {
       cancelled = true;
@@ -192,28 +178,52 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
   React.useEffect(() => {
     if (!feed) return;
     setConnection(feed.state);
-    return feed.onStateChange((state) => setConnection(state));
+    return feed.onStateChange(state => setConnection(state));
   }, [feed]);
+
+  const refreshSeqRef = React.useRef(0);
 
   const refresh = React.useCallback(async () => {
     const id = shipmentIdRef.current;
     if (id == null) return;
+    const seq = ++refreshSeqRef.current;
     try {
       const fresh = await client.getShipment(id);
       // Re-check after the await: `refresh` is triggered from several places
-      // (the unit-completed/completed event handler, `submit`, `finish`) and
-      // is a real network round trip. If the tracked shipment changed while
-      // this was in flight — stop this one, immediately start a different
-      // one, a completely normal fast-testing sequence — applying this
-      // response unconditionally would silently overwrite the new shipment's
-      // state with the old one's, issues and all. Without this guard, a slow
-      // stale response for shipment A can land after shipment B is already
-      // bound and make B's screen show A's exceptions.
-      if (shipmentIdRef.current !== id) return;
-      setShipment(fresh);
+      // (the unit-completed/completed event handler, `submit`, `finish`, and
+      // an exception resolution) and is a real network round trip, so calls
+      // can overlap. Two checks guard against applying a stale response:
+      //
+      // - `shipmentIdRef` catches the tracked shipment changing entirely — a
+      //   completely normal fast-testing sequence — which would otherwise let
+      //   a slow response for shipment A land after shipment B is bound and
+      //   show B's screen A's exceptions.
+      // - `refreshSeqRef` catches two overlapping refreshes of the *same*
+      //   shipment resolving out of order — e.g. resolving an exception
+      //   triggers a refresh directly while a realtime event triggers another,
+      //   and the second request's response arrives first. Without this, the
+      //   later-sent-but-earlier-arriving response can be overwritten by the
+      //   stale one that lands after it, making a just-applied resolution look
+      //   like it never take effect.
+      if (shipmentIdRef.current !== id || refreshSeqRef.current !== seq) return;
+      // The GET itself can also be stale relative to what's already applied —
+      // the API's write and its realtime emit can race the read path, so a
+      // refetch triggered by an event can return counts from *before* that
+      // event's write landed. Never let it regress counts a realtime event
+      // already advanced locally; carry the current (higher) `actual_quantity`
+      // per line item forward instead of trusting the fetch blindly.
+      setShipment(prev => {
+        if (!prev) return fresh;
+        const line_items = fresh.line_items.map(item => {
+          const current = prev.line_items.find(i => i.sku === item.sku && String(i.product_id) === String(item.product_id));
+          if (!current || current.actual_quantity <= item.actual_quantity) return item;
+          return { ...item, actual_quantity: current.actual_quantity, is_edited: current.is_edited };
+        });
+        return { ...fresh, line_items };
+      });
       setPhase(phaseFromStatus(fresh.status));
     } catch (err) {
-      if (shipmentIdRef.current === id) setError(toArvistError(err));
+      if (shipmentIdRef.current === id && refreshSeqRef.current === seq) setError(toArvistError(err));
     }
   }, [client]);
 
@@ -263,7 +273,7 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
   React.useEffect(() => {
     if (!feed) return;
 
-    return feed.subscribe((event) => {
+    return feed.subscribe(event => {
       setLastEvent(event);
       onEventRef.current?.(event);
 
@@ -302,11 +312,13 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
           break;
 
         case 'unit-completed':
-          // Fold issues in immediately so the UI reacts before the refetch,
-          // then reconcile against the server.
-          setShipment((prev) =>
-            prev ? mergeRealtimeIssues(prev, event.payload) : prev,
-          );
+          // Fold counts and issues in immediately, from the event payload
+          // itself — the API emits this before the corresponding
+          // `GET /shipment/:id` (triggered below via `refetchOn`) is
+          // guaranteed to reflect it, so waiting on that refetch alone can
+          // briefly (or, if the fetch races the write, persistently until
+          // the *next* event) show stale counts. See `mergeRealtimeCounts`.
+          setShipment(prev => (prev ? mergeRealtimeCounts(mergeRealtimeIssues(prev, event.payload), event.payload) : prev));
           break;
 
         case 'status':
@@ -360,24 +372,20 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
     onCompletedRef.current?.(shipment, reconcile(shipment));
   }, [phase, shipment]);
 
-
   // --- actions --------------------------------------------------------------
-  const act = React.useCallback(
-    async <T,>(fn: () => Promise<T>): Promise<T> => {
-      setLoading(true);
-      setError(undefined);
-      try {
-        return await fn();
-      } catch (err) {
-        const normalized = toArvistError(err);
-        setError(normalized);
-        throw normalized;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [],
-  );
+  const act = React.useCallback(async <T>(fn: () => Promise<T>): Promise<T> => {
+    setLoading(true);
+    setError(undefined);
+    try {
+      return await fn();
+    } catch (err) {
+      const normalized = toArvistError(err);
+      setError(normalized);
+      throw normalized;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
   const start = React.useCallback(
     async (input: StartInspectionInput) => {
@@ -388,9 +396,7 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
       };
       // Keying on the order numbers makes a double tote scan idempotent.
       const idempotencyKey = payload.shipment_key ?? payload.order_numbers?.join(',');
-      const started = await act(() =>
-        client.startInspection(payload, idempotencyKey ? { idempotencyKey } : undefined),
-      ).catch((err) => {
+      const started = await act(() => client.startInspection(payload, idempotencyKey ? { idempotencyKey } : undefined)).catch(err => {
         setPhase('error');
         throw err;
       });
@@ -442,24 +448,19 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
       });
     }
     const id = lineItem.id;
-    setCorrections((prev) => [
-      ...prev.filter((c) => c.id !== id),
-      { id, actual_quantity: quantity, is_edited: true },
-    ]);
+    setCorrections(prev => [...prev.filter(c => c.id !== id), { id, actual_quantity: quantity, is_edited: true }]);
   }, []);
 
   const clearCorrections = React.useCallback(() => setCorrections([]), []);
 
   const submit = React.useCallback(async () => {
     const staged = corrections;
-    adopt(
-      await act(() =>
-        client.submitInspection(
-          requireShipment(),
-          staged.length ? { line_items: staged } : {},
-        ),
-      ),
-    );
+    // The API's submit handler unconditionally does `line_items.filter(...)`
+    // on the body — omitting the key entirely (as `{}`) throws server-side
+    // ("undefined is not an object"), surfaced to us as a bare 400. Always
+    // send the array, even empty, so a submit with no staged corrections
+    // doesn't crash the request.
+    adopt(await act(() => client.submitInspection(requireShipment(), { line_items: staged })));
     setCorrections([]);
     await refresh();
   }, [act, adopt, client, corrections, requireShipment, refresh]);
@@ -500,23 +501,18 @@ export function useInspection(options: UseInspectionOptions = {}): UseInspection
    */
   const effectiveShipment = React.useMemo(() => {
     if (!shipment || corrections.length === 0) return shipment;
-    const byId = new Map(corrections.map((c) => [c.id, c] as const));
+    const byId = new Map(corrections.map(c => [c.id, c] as const));
     return {
       ...shipment,
-      line_items: shipment.line_items.map((item) => {
+      line_items: shipment.line_items.map(item => {
         const correction = item.id != null ? byId.get(item.id) : undefined;
-        return correction
-          ? { ...item, actual_quantity: correction.actual_quantity, is_edited: true }
-          : item;
+        return correction ? { ...item, actual_quantity: correction.actual_quantity, is_edited: true } : item;
       }),
     };
   }, [shipment, corrections]);
 
   const reconciliation = React.useMemo(() => reconcile(effectiveShipment), [effectiveShipment]);
-  const completion = React.useMemo(
-    () => checkCompletion(effectiveShipment, { autoCompleted }),
-    [effectiveShipment, autoCompleted],
-  );
+  const completion = React.useMemo(() => checkCompletion(effectiveShipment, { autoCompleted }), [effectiveShipment, autoCompleted]);
 
   return {
     shipment: effectiveShipment,
@@ -574,7 +570,5 @@ function phaseFromStatus(status: string): InspectionPhase {
 }
 
 function toArvistError(err: unknown): ArvistError {
-  return ArvistError.is(err)
-    ? err
-    : new ArvistError({ code: 'unknown', message: 'Something went wrong.', cause: err });
+  return ArvistError.is(err) ? err : new ArvistError({ code: 'unknown', message: 'Something went wrong.', cause: err });
 }

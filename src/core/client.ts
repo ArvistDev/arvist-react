@@ -113,14 +113,12 @@ export class ArvistClient {
   async findStationByName(areaName: string, opts?: RequestOptions): Promise<QualityStation> {
     const stations = await this.listStations({}, opts);
     const needle = areaName.trim().toLowerCase();
-    const match = stations.find(
-      (s) => s.area_name?.trim().toLowerCase() === needle || s.name?.trim().toLowerCase() === needle,
-    );
+    const match = stations.find(s => s.area_name?.trim().toLowerCase() === needle || s.name?.trim().toLowerCase() === needle);
     if (!match) {
       throw new ArvistError({
         code: 'station_not_found',
         message: `No quality station is configured with the name "${areaName}".`,
-        detail: { areaName, known: stations.map((s) => s.area_name ?? s.name) },
+        detail: { areaName, known: stations.map(s => s.area_name ?? s.name) },
       });
     }
     return match;
@@ -187,11 +185,7 @@ export class ArvistClient {
    * are made — there is no live endpoint for editing a line item's count. Pass
    * them as `line_items`, each with the existing line item's `id`.
    */
-  async submitInspection(
-    shipmentId: number,
-    input: SubmitInspectionInput = {},
-    opts?: RequestOptions,
-  ): Promise<ActionResult> {
+  async submitInspection(shipmentId: number, input: SubmitInspectionInput = {}, opts?: RequestOptions): Promise<ActionResult> {
     const body = await this.request<unknown>('POST', '/quality/inspection/shipment/submit', {
       body: { shipment_id: shipmentId, ...input },
       ...opts,
@@ -203,11 +197,7 @@ export class ArvistClient {
     return this.action('POST', '/quality/inspection/shipment/cancel-shipment', shipmentId, opts);
   }
 
-  async cancelUnit(
-    shipmentId: number,
-    unitId: string,
-    opts?: RequestOptions,
-  ): Promise<ActionResult> {
+  async cancelUnit(shipmentId: number, unitId: string, opts?: RequestOptions): Promise<ActionResult> {
     const body = await this.request<unknown>('POST', '/quality/inspection/shipment/cancel-unit', {
       body: { shipment_id: shipmentId, unit_id: unitId },
       ...opts,
@@ -223,12 +213,7 @@ export class ArvistClient {
     return this.action('POST', '/quality/inspection/shipment/resume-shipment', shipmentId, opts);
   }
 
-  private async action(
-    method: string,
-    path: string,
-    shipmentId: number,
-    opts?: RequestOptions,
-  ): Promise<ActionResult> {
+  private async action(method: string, path: string, shipmentId: number, opts?: RequestOptions): Promise<ActionResult> {
     const body = await this.request<unknown>(method, path, {
       body: { shipment_id: shipmentId },
       ...opts,
@@ -241,11 +226,7 @@ export class ArvistClient {
   // -------------------------------------------------------------------------
 
   listIssues(unitSessionId: number, opts?: RequestOptions) {
-    return this.request<ShipmentIssue[]>(
-      'GET',
-      `/quality/inspection/shipment-issue/unit/${unitSessionId}`,
-      opts,
-    );
+    return this.request<ShipmentIssue[]>('GET', `/quality/inspection/shipment-issue/unit/${unitSessionId}`, opts);
   }
 
   /**
@@ -261,11 +242,7 @@ export class ArvistClient {
    */
   async resolveIssue(input: ResolveIssueInput, opts?: RequestOptions): Promise<ActionResult> {
     const { unit_session_id, ...body } = input;
-    const result = await this.request<unknown>(
-      'PUT',
-      `/quality/inspection/shipment-issue/unit/${unit_session_id}`,
-      { body, ...opts },
-    );
+    const result = await this.request<unknown>('PUT', `/quality/inspection/shipment-issue/unit/${unit_session_id}`, { body, ...opts });
     return toActionResult(result);
   }
 
@@ -279,11 +256,7 @@ export class ArvistClient {
    */
   async resolveIssueById(input: ResolveIssueByIdInput, opts?: RequestOptions): Promise<ActionResult> {
     const { issue_id, ...body } = input;
-    const result = await this.request<unknown>(
-      'PATCH',
-      `/quality/inspection/shipment-issue/${issue_id}/resolve`,
-      { body, ...opts },
-    );
+    const result = await this.request<unknown>('PATCH', `/quality/inspection/shipment-issue/${issue_id}/resolve`, { body, ...opts });
     return toActionResult(result);
   }
 
@@ -303,15 +276,8 @@ export class ArvistClient {
    *
    * The call fails if the `unknown` bucket is already empty.
    */
-  async updateUnknownProduct(
-    input: UpdateUnknownProductInput,
-    opts?: RequestOptions,
-  ): Promise<ActionResult> {
-    const result = await this.request<unknown>(
-      'PUT',
-      '/quality/inspection/shipment/unknown-product/update',
-      { body: input, ...opts },
-    );
+  async updateUnknownProduct(input: UpdateUnknownProductInput, opts?: RequestOptions): Promise<ActionResult> {
+    const result = await this.request<unknown>('PUT', '/quality/inspection/shipment/unknown-product/update', { body: input, ...opts });
     return toActionResult(result);
   }
 
@@ -320,11 +286,7 @@ export class ArvistClient {
     body: { shipment_id: number; shipment_unit_id?: string; identifier: string; metadata?: Record<string, unknown> },
     opts?: RequestOptions,
   ): Promise<ActionResult> {
-    const result = await this.request<unknown>(
-      'PUT',
-      '/quality/inspection/shipment/pallet-identifier',
-      { body, ...opts },
-    );
+    const result = await this.request<unknown>('PUT', '/quality/inspection/shipment/pallet-identifier', { body, ...opts });
     return toActionResult(result);
   }
 
@@ -345,19 +307,18 @@ export class ArvistClient {
    */
   async getShipmentMedia(shipmentId: number, opts?: RequestOptions): Promise<ShipmentImage[]> {
     const shipment = await this.getShipment(shipmentId, opts);
-    const images = (shipment.units ?? []).flatMap((u) =>
-      (u.quality_sessions?.[0]?.images ?? []).map((img) => ({ ...img })),
-    );
+    const images = (shipment.units ?? []).flatMap(u => (u.quality_sessions?.[0]?.images ?? []).map(img => ({ ...img })));
 
     await Promise.all(
-      images.map(async (img) => {
-        if (img.media?.url || !(img.media?.content_id || img.media?.key)) return;
+      images.map(async img => {
+        const media = img.media;
+        if (!media || media.url) return;
+        const resolvedId =
+          media.content_id ?? media.id ?? media.content?.image?.id ?? media.content?.video?.id ?? media.key ?? media.content?.image?.key ?? media.content?.video?.key;
+        if (resolvedId == null) return;
         try {
-          const { url } = await this.getImageUrl(
-            (img.media.content_id ?? img.media.key)!,
-            opts,
-          );
-          img.media = { ...img.media, url };
+          const { url } = await this.getImageUrl(String(resolvedId), opts);
+          img.media = { ...media, url };
         } catch {
           // Leave `url` unset — the gallery surfaces this as an expired/broken
           // link rather than failing the whole fetch over one bad image.
@@ -370,11 +331,7 @@ export class ArvistClient {
 
   /** Presigned URL for a captured video clip. */
   getVideoUrl(contentId: string, opts?: RequestOptions) {
-    return this.request<{ url: string }>(
-      'GET',
-      `/quality/inspection/shipment/video/presigned/${contentId}`,
-      opts,
-    );
+    return this.request<{ url: string }>('GET', `/quality/inspection/shipment/video/presigned/${contentId}`, opts);
   }
 
   /**
@@ -385,11 +342,7 @@ export class ArvistClient {
    * this for you in that case, so most integrations never need it directly.
    */
   getImageUrl(contentId: string, opts?: RequestOptions) {
-    return this.request<{ url: string }>(
-      'GET',
-      `/storage/media/${contentId}/presigned`,
-      opts,
-    );
+    return this.request<{ url: string }>('GET', `/storage/media/${contentId}/presigned`, opts);
   }
 
   // -------------------------------------------------------------------------
@@ -404,15 +357,9 @@ export class ArvistClient {
    * — the most common "station not responding" report. Call this before or
    * alongside a start to surface that as a real condition rather than silence.
    */
-  async checkStationBinding(
-    areaName: string,
-    opts?: RequestOptions,
-  ): Promise<{ station: QualityStation; hasOpenInspection: boolean; warning?: ArvistErrorCode }> {
+  async checkStationBinding(areaName: string, opts?: RequestOptions): Promise<{ station: QualityStation; hasOpenInspection: boolean; warning?: ArvistErrorCode }> {
     const station = await this.findStationByName(areaName, opts);
-    const open = await this.listShipments(
-      { areaName, status: 'in_progress', limit: 1 },
-      opts,
-    );
+    const open = await this.listShipments({ areaName, status: 'in_progress', limit: 1 }, opts);
     return {
       station,
       hasOpenInspection: open.data.length > 0,
@@ -460,11 +407,7 @@ export class ArvistClient {
   }
 
   /** Escape hatch for endpoints the SDK does not wrap yet. */
-  async request<T>(
-    method: string,
-    path: string,
-    options: RequestOptions & { query?: Record<string, unknown>; body?: unknown } = {},
-  ): Promise<T> {
+  async request<T>(method: string, path: string, options: RequestOptions & { query?: Record<string, unknown>; body?: unknown } = {}): Promise<T> {
     const { idempotencyKey } = options;
     if (idempotencyKey) {
       const cached = this.inflight.get(idempotencyKey);
@@ -481,11 +424,7 @@ export class ArvistClient {
     return promise;
   }
 
-  private async execute<T>(
-    method: string,
-    path: string,
-    options: RequestOptions & { query?: Record<string, unknown>; body?: unknown },
-  ): Promise<T> {
+  private async execute<T>(method: string, path: string, options: RequestOptions & { query?: Record<string, unknown>; body?: unknown }): Promise<T> {
     const maxRetries = options.retries ?? this.config.retries ?? 2;
     const timeoutMs = options.timeoutMs ?? this.config.timeoutMs ?? 30_000;
     const url = this.buildUrl(path, options.query);
@@ -521,8 +460,12 @@ export class ArvistClient {
         if (!response.ok) {
           const error = errorFromResponse(response.status, payload, requestId);
           this.config.onRequest?.({
-            method, path, status: response.status,
-            durationMs: Date.now() - startedAt, attempt, error,
+            method,
+            path,
+            status: response.status,
+            durationMs: Date.now() - startedAt,
+            attempt,
+            error,
           });
           if (error.retryable && attempt < maxRetries) {
             lastError = error;
@@ -533,8 +476,11 @@ export class ArvistClient {
         }
 
         this.config.onRequest?.({
-          method, path, status: response.status,
-          durationMs: Date.now() - startedAt, attempt,
+          method,
+          path,
+          status: response.status,
+          durationMs: Date.now() - startedAt,
+          attempt,
         });
         return payload as T;
       } catch (err) {
@@ -548,7 +494,11 @@ export class ArvistClient {
           cause: err,
         });
         this.config.onRequest?.({
-          method, path, durationMs: Date.now() - startedAt, attempt, error,
+          method,
+          path,
+          durationMs: Date.now() - startedAt,
+          attempt,
+          error,
         });
         if (error.retryable && attempt < maxRetries) {
           lastError = error;
@@ -604,9 +554,7 @@ function toActionResult(body: unknown): ActionResult {
     const message = typeof body['message'] === 'string' ? body['message'] : 'OK';
     const shipment = pickShipment(body);
     const blocked_by = body['blocked_by'] === 'shortage' ? ('shortage' as const) : undefined;
-    const shortage_issues = Array.isArray(body['shortage_issues'])
-      ? (body['shortage_issues'] as ShipmentIssue[])
-      : undefined;
+    const shortage_issues = Array.isArray(body['shortage_issues']) ? (body['shortage_issues'] as ShipmentIssue[]) : undefined;
     return {
       message,
       ...(shipment ? { shipment } : {}),
@@ -621,5 +569,5 @@ function toActionResult(body: unknown): ActionResult {
 function backoff(attempt: number): Promise<void> {
   const base = Math.min(1000 * 2 ** attempt, 8000);
   const jitter = Math.random() * 250;
-  return new Promise((resolve) => setTimeout(resolve, base + jitter));
+  return new Promise(resolve => setTimeout(resolve, base + jitter));
 }

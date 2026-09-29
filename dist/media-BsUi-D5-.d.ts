@@ -126,16 +126,39 @@ interface ShipmentIssue {
 }
 type ShipmentSide = 'front' | 'back' | 'left' | 'right' | 'top' | 'all' | 'left_low' | 'left_high' | 'right_low' | 'right_high' | 'front_low' | 'front_high';
 interface ShipmentImage {
-    id: number;
+    /** Not every deployment sends this — fall back to `media.id`. */
+    id?: number;
     side: ShipmentSide | string;
     filepath?: string;
-    shipment_unit_session_id: number;
+    /** Not every deployment sends this on the image itself. */
+    shipment_unit_session_id?: number;
     media?: MediaRef;
     damages?: ShipmentDamage[];
 }
+/** The stored-file record inside `MediaRef.content`, keyed by media type. */
+interface MediaContentFile {
+    id?: number;
+    /** Storage key/path, used to request a presigned URL — see {@link ArvistClient.getImageUrl}. */
+    key?: string;
+    filename?: string;
+    content_type?: string;
+    metadata?: Record<string, unknown>;
+}
 interface MediaRef {
     id?: number;
+    source?: string;
+    /**
+     * The nested shape some deployments use instead of flat `content_id`/`key`/
+     * `filename`/`mime_type` fields — the actual file record lives at
+     * `content.image` (or `content.video`).
+     */
+    content?: {
+        image?: MediaContentFile;
+        video?: MediaContentFile;
+    };
     content_id?: string;
+    /** Storage key/path. Present instead of `url` on deployments that require a separate presign call — see {@link ArvistClient.getImageUrl}. */
+    key?: string;
     filename?: string;
     mime_type?: string;
     /** Presigned and short-lived. See {@link isMediaUrlExpired}. */
@@ -521,6 +544,8 @@ interface UnitPayload {
     increment_by?: number;
     images?: unknown[];
     issues?: RealtimeIssue[];
+    /** Authoritative per-line-item counts as of this unit. See `mergeRealtimeCounts`. */
+    products?: unknown[];
     identifiers?: {
         order_numbers?: string[];
         total_pallets?: number;
@@ -828,6 +853,25 @@ declare function collectIssues(shipment: Pick<Shipment, 'units'> | undefined): S
  */
 declare function deriveExceptions(shipment: Pick<Shipment, 'line_items' | 'units' | 'status'> | undefined, options?: DeriveOptions): NormalizedException[];
 /**
+ * `unit-completed` payloads carry a `products` array with the authoritative
+ * per-line-item counts *at the moment the unit finished* — the API computes
+ * and emits this before the corresponding `GET /shipment/:id` is guaranteed
+ * to reflect it (the write and the emit can race the read path). Folding
+ * these counts in immediately, rather than waiting on the refetch `refresh()`
+ * triggers, avoids showing stale counts when that GET response lands first
+ * but is behind the event that caused it.
+ *
+ * Matched by `sku` first, falling back to `product_id`, since either may be
+ * absent/inconsistent depending on the integration. Counts never regress: if
+ * the shipment already reflects a higher `actual_quantity` than the payload
+ * (e.g. a later event's refetch already landed, or a manual correction was
+ * applied locally) the higher value wins, so an out-of-order/stale event
+ * can't undo a more advanced state.
+ */
+declare function mergeRealtimeCounts<T extends Pick<Shipment, 'line_items'>>(shipment: T, update: {
+    products?: unknown[];
+}): T;
+/**
  * Realtime unit payloads carry issues keyed `type` rather than `issue_type`,
  * and without ids. This folds them into a shipment so a single
  * {@link deriveExceptions} call covers both sources.
@@ -968,13 +1012,13 @@ interface MediaExpiry {
 declare function getMediaExpiry(media: Pick<MediaRef, 'url' | 'expires_at'> | undefined, receivedAt?: Date, now?: Date): MediaExpiry;
 declare function isMediaUrlExpired(media: Pick<MediaRef, 'url' | 'expires_at'> | undefined, receivedAt?: Date): boolean;
 interface FlatMediaItem {
-    id: number;
+    id: number | string;
     side: string;
     url?: string;
     filename?: string;
     contentId?: string;
     mimeType?: string;
-    unitSessionId: number;
+    unitSessionId?: number;
     damageCount: number;
 }
 /** Flattens the nested image structure into a list a gallery can render. */
@@ -984,4 +1028,4 @@ declare function sortMediaBySide<T extends {
     side: string;
 }>(items: T[]): T[];
 
-export { type ShipmentDamage as $, ArvistError as A, type LineVariance as B, type ConnectionState as C, DEFAULT_ERROR_MESSAGES as D, type ErrorMessageResolver as E, type FlatMediaItem as F, type ListShipmentsQuery as G, type MediaRef as H, type InspectionEvent as I, PALLET_ONLY_EXCEPTIONS as J, PRESIGN_REFRESH_MARGIN_MS as K, type LineItemCorrection as L, type MediaExpiry as M, type NormalizedException as N, type Paginated as O, type PartialExceptionCopy as P, type QualityStation as Q, type Reconciliation as R, type Shipment as S, type QualityStationType as T, type RealtimeIssue as U, type ReconciledLine as V, type ResolutionAction as W, type ResolveIssueByIdInput as X, type ResolveIssueInput as Y, SENTINEL_SKUS as Z, type SentinelSku as _, type CompletionCheck as a, type ShipmentDetail as a0, type ShipmentIssue as a1, type ShipmentPalletIdentifier as a2, type ShipmentSide as a3, type ShipmentStatus as a4, type ShipmentType as a5, type ShipmentUnit as a6, type ShipmentUnitSession as a7, type ShipmentUnitType as a8, type SocketIoTransportConfig as a9, upcCoverage as aA, type SocketLike as aa, type SubmitInspectionInput as ab, type UnitPayload as ac, type UpdateUnknownProductInput as ad, buildBarcodeIndex as ae, checkCompletion as af, collectIssues as ag, createErrorMessageResolver as ah, createSocketIoTransport as ai, deriveExceptions as aj, errorFromResponse as ak, flattenMedia as al, getDisplayMessage as am, getLineItemBarcode as an, getMediaExpiry as ao, isExceptionOpen as ap, isMediaUrlExpired as aq, isSentinelLineItem as ar, mergeRealtimeIssues as as, normalizeBarcode as at, orderedLineItems as au, parsePresignedExpiry as av, reconcile as aw, resolutionsFor as ax, sortMediaBySide as ay, topics as az, type LineItem as b, type StartInspectionInput as c, InspectionFeed as d, type ExceptionCopy as e, type SocketIoFactory as f, type RealtimeTransport as g, type ArvistErrorCode as h, type ResolutionOption as i, type ExceptionType as j, type ShipmentImage as k, type ActionResult as l, type ArvistErrorInit as m, DEFAULT_EXCEPTION_COPY as n, DEFAULT_PRESIGNED_TTL_MS as o, type DeriveOptions as p, type DetectionAnnotation as q, type ExceptionSeverity as r, type FeedBinding as s, ISSUE_ACTION_BY_RESOLUTION as t, type InspectionEventKind as u, type InspectionFeedOptions as v, type IssueResolveAction as w, type IssueStatus as x, type IssueType as y, type LineItemInput as z };
+export { type SentinelSku as $, ArvistError as A, type LineVariance as B, type ConnectionState as C, DEFAULT_ERROR_MESSAGES as D, type ErrorMessageResolver as E, type FlatMediaItem as F, type ListShipmentsQuery as G, type MediaExpiry as H, type InspectionEvent as I, type MediaRef as J, PALLET_ONLY_EXCEPTIONS as K, type LineItemCorrection as L, type MediaContentFile as M, type NormalizedException as N, PRESIGN_REFRESH_MARGIN_MS as O, type PartialExceptionCopy as P, type QualityStation as Q, type Reconciliation as R, type Shipment as S, type Paginated as T, type QualityStationType as U, type RealtimeIssue as V, type ReconciledLine as W, type ResolutionAction as X, type ResolveIssueByIdInput as Y, type ResolveIssueInput as Z, SENTINEL_SKUS as _, type CompletionCheck as a, type ShipmentDamage as a0, type ShipmentDetail as a1, type ShipmentIssue as a2, type ShipmentPalletIdentifier as a3, type ShipmentSide as a4, type ShipmentStatus as a5, type ShipmentType as a6, type ShipmentUnit as a7, type ShipmentUnitSession as a8, type ShipmentUnitType as a9, sortMediaBySide as aA, topics as aB, upcCoverage as aC, type SocketIoTransportConfig as aa, type SocketLike as ab, type SubmitInspectionInput as ac, type UnitPayload as ad, type UpdateUnknownProductInput as ae, buildBarcodeIndex as af, checkCompletion as ag, collectIssues as ah, createErrorMessageResolver as ai, createSocketIoTransport as aj, deriveExceptions as ak, errorFromResponse as al, flattenMedia as am, getDisplayMessage as an, getLineItemBarcode as ao, getMediaExpiry as ap, isExceptionOpen as aq, isMediaUrlExpired as ar, isSentinelLineItem as as, mergeRealtimeCounts as at, mergeRealtimeIssues as au, normalizeBarcode as av, orderedLineItems as aw, parsePresignedExpiry as ax, reconcile as ay, resolutionsFor as az, type LineItem as b, type StartInspectionInput as c, InspectionFeed as d, type ExceptionCopy as e, type SocketIoFactory as f, type RealtimeTransport as g, type ArvistErrorCode as h, type ResolutionOption as i, type ExceptionType as j, type ShipmentImage as k, type ActionResult as l, type ArvistErrorInit as m, DEFAULT_EXCEPTION_COPY as n, DEFAULT_PRESIGNED_TTL_MS as o, type DeriveOptions as p, type DetectionAnnotation as q, type ExceptionSeverity as r, type FeedBinding as s, ISSUE_ACTION_BY_RESOLUTION as t, type InspectionEventKind as u, type InspectionFeedOptions as v, type IssueResolveAction as w, type IssueStatus as x, type IssueType as y, type LineItemInput as z };

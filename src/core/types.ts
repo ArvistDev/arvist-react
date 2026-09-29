@@ -119,14 +119,7 @@ export interface ShipmentPalletIdentifier {
  * {@link ArvistClient.resolveIssueById}. Use {@link deriveExceptions} to get
  * the full operator-facing picture regardless of which shape a type uses.
  */
-export type IssueType =
-  | 'damage'
-  | 'unidentified_product'
-  | 'wrong_load'
-  | 'no_identifiers'
-  | 'wrong_product'
-  | 'overage'
-  | 'shortage';
+export type IssueType = 'damage' | 'unidentified_product' | 'wrong_load' | 'no_identifiers' | 'wrong_product' | 'overage' | 'shortage';
 
 export type IssueStatus = 'open' | 'resolved' | 'canceled' | 'unresolved' | 'false_positive';
 
@@ -156,22 +149,38 @@ export interface ShipmentIssue {
 // Media
 // ---------------------------------------------------------------------------
 
-export type ShipmentSide =
-  | 'front' | 'back' | 'left' | 'right' | 'top' | 'all'
-  | 'left_low' | 'left_high' | 'right_low' | 'right_high'
-  | 'front_low' | 'front_high';
+export type ShipmentSide = 'front' | 'back' | 'left' | 'right' | 'top' | 'all' | 'left_low' | 'left_high' | 'right_low' | 'right_high' | 'front_low' | 'front_high';
 
 export interface ShipmentImage {
-  id: number;
+  /** Not every deployment sends this — fall back to `media.id`. */
+  id?: number;
   side: ShipmentSide | string;
   filepath?: string;
-  shipment_unit_session_id: number;
+  /** Not every deployment sends this on the image itself. */
+  shipment_unit_session_id?: number;
   media?: MediaRef;
   damages?: ShipmentDamage[];
 }
 
+/** The stored-file record inside `MediaRef.content`, keyed by media type. */
+export interface MediaContentFile {
+  id?: number;
+  /** Storage key/path, used to request a presigned URL — see {@link ArvistClient.getImageUrl}. */
+  key?: string;
+  filename?: string;
+  content_type?: string;
+  metadata?: Record<string, unknown>;
+}
+
 export interface MediaRef {
   id?: number;
+  source?: string;
+  /**
+   * The nested shape some deployments use instead of flat `content_id`/`key`/
+   * `filename`/`mime_type` fields — the actual file record lives at
+   * `content.image` (or `content.video`).
+   */
+  content?: { image?: MediaContentFile; video?: MediaContentFile };
   content_id?: string;
   /** Storage key/path. Present instead of `url` on deployments that require a separate presign call — see {@link ArvistClient.getImageUrl}. */
   key?: string;
@@ -197,8 +206,7 @@ export interface ShipmentDamage {
 // Stations
 // ---------------------------------------------------------------------------
 
-export type QualityStationType =
-  | 'turntable' | 'stationary' | 'conveyor_belt' | 'mobile_device' | 'packing_table';
+export type QualityStationType = 'turntable' | 'stationary' | 'conveyor_belt' | 'mobile_device' | 'packing_table';
 
 export interface QualityStation {
   id: number;

@@ -1,6 +1,6 @@
 import * as React from 'react';
-import { N as NormalizedException, i as ResolutionOption, R as Reconciliation, C as ConnectionState, F as FlatMediaItem } from './media-DnQFgvEV.cjs';
-import { I as InspectionPhase, S as StationBindingState } from './use-inspection-CdBqcl5g.cjs';
+import { N as NormalizedException, i as ResolutionOption, R as Reconciliation, C as ConnectionState, F as FlatMediaItem } from './media-BsUi-D5-.cjs';
+import { I as InspectionPhase, S as StationBindingState } from './use-inspection-CzApZfmB.cjs';
 
 /**
  * Class-name value, in the shapes JSX conditionals naturally produce.
@@ -171,6 +171,6 @@ interface MediaGalleryProps extends StyleableProps<MediaGallerySlot> {
  * audit trail — copy them to your own storage when you receive them; refreshing
  * only works while the media is still retained upstream.
  */
-declare function MediaGallery({ items, stale, onRefresh, onSelect, emptyState, className, classNames, unstyled, }: MediaGalleryProps): React.JSX.Element;
+declare function MediaGallery({ items, stale, onRefresh, onSelect, emptyState, className, classNames, unstyled }: MediaGalleryProps): React.JSX.Element;
 
 export { ExceptionCard, type ExceptionCardProps, type ExceptionCardSlot, ExceptionList, type ExceptionListProps, type ExceptionListSlot, InspectionStatus, type InspectionStatusProps, type InspectionStatusSlot, MediaGallery, type MediaGalleryProps, type MediaGallerySlot, ReconciliationTable, type ReconciliationTableProps, type ReconciliationTableSlot, type SlotClasses, StationStatus, type StationStatusProps, type StationStatusSlot, type StyleableProps, cn, createSlots };
