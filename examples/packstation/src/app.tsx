@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { ArvistProvider, type ArvistClientConfig } from '@arvist/react';
 import { createMockBackend } from './mock/backend';
 import { PackStation } from './pack-station';
+import { io } from 'socket.io-client';
 
 /**
  * Wires the SDK up the way an integrator would.
@@ -23,7 +24,7 @@ export function App() {
     () =>
       liveUrl
         ? {
-            baseUrl: liveUrl,
+            baseUrl: window.location.origin,
             token: import.meta.env.VITE_ARVIST_TOKEN as string | undefined,
             // Both layers are independent: Access authenticates the device at
             // the edge, the bearer token authenticates the caller.
@@ -40,10 +41,7 @@ export function App() {
     [liveUrl, backend],
   );
 
-  const realtime = useMemo(
-    () => (liveUrl ? undefined : { transport: backend.transport }),
-    [liveUrl, backend],
-  );
+  const realtime = useMemo(() => (liveUrl ? undefined : { transport: backend.transport, io, url: liveUrl }), [liveUrl, backend]);
 
   return (
     <ArvistProvider
@@ -52,14 +50,8 @@ export function App() {
       autoCompleted={autoCompleted}
       // Warehouse copy differs from the SDK defaults in places; override rather
       // than fork the components.
-      copy={{ actions: { remove_item: 'Pulled from tote' } }}
-    >
-      <PackStation
-        backend={backend}
-        live={Boolean(liveUrl)}
-        autoCompleted={autoCompleted}
-        onAutoCompletedChange={setAutoCompleted}
-      />
+      copy={{ actions: { remove_item: 'Pulled from tote' } }}>
+      <PackStation backend={backend} live={Boolean(liveUrl)} autoCompleted={autoCompleted} onAutoCompletedChange={setAutoCompleted} />
     </ArvistProvider>
   );
 }
